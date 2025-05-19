@@ -1,0 +1,16 @@
+# Ignore compiled bytecode
+__pycache__/
+
+# Ignore Anaconda project folder
+anaconda_projects/
+
+# Ignore build artifacts
+build/
+mex.egg-info/
+
+# Ignore testing and GUI files
+Tests/
+GUI.py
+mex_main.py
+mex_main.ipynb
+
