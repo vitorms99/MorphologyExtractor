@@ -9,6 +9,36 @@ import numpy as np
 
 import numpy as np
 
+def open_fits_image(file_path):
+    """
+    Opens a FITS file and returns its image data and header.
+
+    Parameters:
+    ----------
+    file_path : str
+        Path to the FITS file.
+
+    Returns:
+    -------
+    tuple
+        A tuple containing the image data and the header.
+        If the file cannot be opened or lacks data, returns (None, None).
+    """
+    try:
+        # Open the FITS file
+        with fits.open(file_path) as hdul:
+            # Extract the image data and header from the first HDU
+            image_data = hdul[0].data
+            header = hdul[0].header
+            return image_data, header
+    except FileNotFoundError:
+        print(f"Error: File not found at '{file_path}'.")
+        return None, None
+    except Exception as e:
+        print(f"Error: Unable to open the FITS file. {e}")
+        return None, None
+
+
 def extract_cutouts(image, segmask, expansion_factor=1.5, estimate_noise=False):
     """
     Extract square cutouts of the image and segmentation mask centered on the galaxy.
@@ -152,7 +182,7 @@ def recenter_image(image, xm, ym, final_size=None):
     return image[y1:y2, x1:x2]
 
 
-def vary_galaxy_image(image, sigma_bkg = None, num_realizations=100):
+def _vary_galaxy_image(image, sigma_bkg = None, num_realizations=100):
     """
     Generates multiple realizations of an image with Poisson noise (photon noise) and Gaussian background noise.
     
@@ -180,7 +210,7 @@ def vary_galaxy_image(image, sigma_bkg = None, num_realizations=100):
     else:
         return np.moveaxis(poisson_noisy_images, -1, 0)  # Move realization axis to first dimension
 
-def load_config(config_file):
+def _load_config(config_file):
     """
     Load a JSON configuration file.
 
@@ -203,7 +233,7 @@ def load_config(config_file):
     return config
 
 
-def initialize_logger(log_file):
+def _initialize_logger(log_file):
     """
     Initialize a logger to log pipeline events.
 
@@ -225,7 +255,7 @@ def initialize_logger(log_file):
     logging.getLogger().addHandler(console_handler)
 
 
-def ensure_directory_exists(directory):
+def _ensure_directory_exists(directory):
     """
     Ensure that a directory exists, creating it if necessary.
 
@@ -239,7 +269,7 @@ def ensure_directory_exists(directory):
 
 import numpy as np
 
-def flux_weighted_center(image, x_center, y_center, a, b, theta):
+def _flux_weighted_center(image, x_center, y_center, a, b, theta):
     """
     Calculate the flux-weighted center within an elliptical aperture.
 
@@ -297,7 +327,7 @@ def flux_weighted_center(image, x_center, y_center, a, b, theta):
     return new_x_center, new_y_center
 
 
-def flatten_dict(d, parent_key='', sep='.'):
+def _flatten_dict(d, parent_key='', sep='.'):
     """
     Flatten a nested dictionary into a single level with dot-separated keys.
 
@@ -325,7 +355,7 @@ def flatten_dict(d, parent_key='', sep='.'):
     return dict(items)
 
 
-def validate_config(config, required_keys):
+def _validate_config(config, required_keys):
     """
     Validate that a configuration dictionary contains all required keys.
 
@@ -380,7 +410,7 @@ def get_files_with_format(folder_path, file_extension):
         print(f"Error: Unable to retrieve files. {e}")
         return []
     
-def open_fits_image(file_path):
+def _open_fits_image(file_path):
     """
     Opens a FITS file and returns its image data and header.
 
@@ -409,7 +439,7 @@ def open_fits_image(file_path):
         print(f"Error: Unable to open the FITS file. {e}")
         return None, None
     
-def centralize_on_main_obj(xc, yc, image, size_method="auto", size=0):
+def _centralize_on_main_obj(xc, yc, image, size_method="auto", size=0):
     """
     Center an image around a specified main object with guaranteed NxN odd dimensions.
     Extra pixels are filled with zeros if the cutout extends beyond the image boundaries.
@@ -453,7 +483,7 @@ def centralize_on_main_obj(xc, yc, image, size_method="auto", size=0):
     return image_recentered
 
 
-def prepare_final_image(image, image_to_use, rp):
+def _prepare_final_image(image, image_to_use, rp):
         
     if image_to_use == 'smoothed':
 
@@ -465,7 +495,7 @@ def prepare_final_image(image, image_to_use, rp):
         return(final_image)
 import copy
 
-def merge_configs(default_config, user_config):
+def _merge_configs(default_config, user_config):
     """
     Merge the user-provided configuration into the default configuration.
     Keeps missing keys from the default config.

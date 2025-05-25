@@ -3,23 +3,48 @@ import sep
 from scipy import interpolate
 import warnings
 
+"""
+PetrosianCalculator
+===================
 
+Class to calculate the Petrosian radius and fractional light radii
+using elliptical or circular apertures based on galaxy morphology.
+
+Attributes
+----------
+galaxy_image : ndarray
+    Input 2D galaxy image.
+x, y : float
+    Galaxy center coordinates.
+a, b : float
+    Semi-major and semi-minor axes of the galaxy.
+theta : float
+    Orientation angle (radians).
+
+Methods
+-------
+calculate_petrosian_radius :
+    Compute the Petrosian radius for a given flux threshold.
+calculate_fractional_radius :
+    Compute the radius enclosing a specific fraction of the total light.
+"""
 class PetrosianCalculator:
     """
     Class to calculate the Petrosian radius for a galaxy.
     """
     def __init__(self, galaxy_image, x, y, a, b, theta):
-        """
-        Initialize the PetrosianCalculator.
+        """Initialize the PetrosianCalculator.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         galaxy_image : ndarray
-            The galaxy image to analyze.
-        segmentation_map : ndarray
-            The segmentation map identifying objects in the image.
-        config : dict
-            Configuration parameters for Petrosian calculation.
+            Input galaxy image.
+        x, y : float
+            Galaxy center coordinates.
+        a, b : float
+            Semi-major and semi-minor axes.
+        theta : float
+            Ellipticity angle (radians).
         """
         self.galaxy_image = galaxy_image
         self.x = x
@@ -31,7 +56,7 @@ class PetrosianCalculator:
         
         
         
-    def define_apertures(self, a, rp_step=0.05):
+    def _define_apertures(self, a, rp_step=0.05):
         """
         Define the aperture scales for Petrosian radius calculation.
 
@@ -51,17 +76,39 @@ class PetrosianCalculator:
 
     def calculate_petrosian_radius(self, rp_thresh = 0.2, aperture = "elliptical", optimize_rp = True,
                                    interpolate_order = 3, Naround = 3, rp_step = 0.05):
-        """
-        Calculate the Petrosian radius and associated parameters.
+        """Compute the Petrosian radius and its associated profile.
 
-        Returns:
-        --------
-        tuple
-            Arrays of eta, numerator, denominator, growth curve, radii, and the Petrosian radius.
+        Parameters
+        ----------
+        rp_thresh : float
+            Eta threshold to define the Petrosian radius.
+        aperture : str
+            'elliptical' or 'circular'.
+        optimize_rp : bool
+            Whether to use bissection optimization for eta curve.
+        interpolate_order : int
+            Order of spline interpolation.
+        Naround : int
+            Number of points to interpolate near Rp.
+        rp_step : float
+            Step size for radial apertures.
+
+        Returns
+        -------
+        eta : ndarray
+            Eta curve.
+        growth_curve : ndarray
+            Cumulative light profile.
+        raio : ndarray
+            Semi-major axis values.
+        rp : float
+            Petrosian radius.
+        eta_flag : int
+            Flag (1 if eta threshold not crossed robustly).
         """
         
         eta, numerador, denominador, raio, growth_curve = [], [], [], [], []
-        scale = self.define_apertures(self.a, rp_step)
+        scale = self._define_apertures(self.a, rp_step)
         if aperture == 'circular':
             b = self.a
             
@@ -193,27 +240,50 @@ class PetrosianCalculator:
 
         return float(rp)
 
-    def calculate_fractional_radius(self, fraction = 0.5, sampling = 0.05, aperture = 'elliptical'):
-        ###### Calculate Reff ###################
-        # Create a range of semi-major axis values
-        sma_values = np.arange(1, 8*self.a, sampling)
-        if aperture == 'circular':
-            b = self.a
-        else:
-            b = self.b
-    
-        # Compute flux in elliptical apertures
-        flux_values = np.array([sep.sum_ellipse(self.galaxy_image, [self.x], [self.y], [sma], [sma * (b / self.a)], [self.theta])[0] for sma in sma_values])
+    def calculate_fractional_radius(self, fraction=0.5, sampling=0.05, aperture='elliptical'):
+        """Compute the radius enclosing a fixed fraction of total light.
+
+        Parameters
+        ----------
+        fraction : float
+            Fraction of light to enclose (e.g., 0.5 for Re).
+        sampling : float
+            Sampling resolution in pixels.
+        aperture : str
+            Type of aperture: 'elliptical' or 'circular'.
+
+        Returns
+        -------
+        Re : float
+            Radius enclosing the specified fraction.
+        flux_values : ndarray
+            Flux within each aperture.
+        sma_values : ndarray
+            Semi-major axis values sampled.
+        """
         
-        # Ensure no NaNs in flux values
+        # Create semi-major axis values
+        sma_values = np.arange(1, 8 * self.a, sampling)
+
+        if aperture == 'circular':
+            b_values = sma_values
+        else:
+            b_values = sma_values * (self.b / self.a)
+
+        # Compute cumulative flux directly with SEP
+        flux_values, _, _ = sep.sum_ellipse(
+                                            self.galaxy_image,
+                                            [self.x], [self.y],
+                                            sma_values,
+                                            b_values,
+                                            [self.theta] * len(sma_values)
+                                            )
+
         flux_values = np.nan_to_num(flux_values, nan=0.0)
-    
-        # Compute cumulative flux
-        cum_flux = np.cumsum(flux_values)
-        total_flux = cum_flux[-1]
-    
-        # Find the radius where 50% of the total flux is enclosed
-        Re = np.interp(fraction * total_flux, cum_flux, sma_values)
-        return(Re/self.a, cum_flux, sma_values)
+        total_flux = flux_values[-1]
+
+        # Interpolate to find Re
+        Re = np.interp(fraction * total_flux, flux_values, sma_values)
+        return Re, flux_values, sma_values
 
 

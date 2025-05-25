@@ -9,7 +9,6 @@ from scipy.optimize import minimize
 from scipy.fft import fft, fftfreq
 from scipy import signal, stats
 from skimage.transform import radon, resize
-from mex.Utils_module import centralize_on_main_obj
 from astropy.convolution import convolve
 import astropy.convolution as convolution
 from astropy.convolution import Gaussian2DKernel, Box2DKernel, Tophat2DKernel 
@@ -20,12 +19,77 @@ import warnings
 import matplotlib.pyplot as plt
 import skimage.measure
 
+
+"""
+Concentration
+=============
+
+This class computes the concentration index (C) of a galaxy, defined as the log ratio of the radii containing
+80% and 20% of the galaxy’s total light, using elliptical apertures.
+
+Attributes
+----------
+image : ndarray
+    2D array representing the input image of the galaxy.
+
+Methods
+-------
+get_growth_curve :
+    Compute cumulative light profile (growth curve).
+get_radius :
+    Interpolate the radius corresponding to a given light fraction.
+get_concentration :
+    Compute the concentration index using Conselice or Barchi methods.
+plot_growth_curve :
+    Plot the normalized growth curve and annotate r_inner and r_outer.
+"""
+
+
 class Concentration:
+    
     def __init__(self, image):
-        self.image = image
+        """
+        Initialize the Concentration object.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input 2D galaxy image. Array must be C-contiguous.
+        """
         
+        if not image.flags['C_CONTIGUOUS']:
+            self.image = np.ascontiguousarray(image)
+
+        else:
+            self.image = image.copy()
         
     def get_growth_curve(self, x, y, a, b, theta, rmax = None, sampling_step = 1):
+    
+        """
+        Calculate the normalized cumulative light profile (growth curve).
+
+        Parameters
+        ----------
+        x, y : float
+            Coordinates of the galaxy center.
+        a, b : float
+            Semi-major and semi-minor axes of the galaxy.
+        theta : float
+            Ellipticity angle (in radians).
+        rmax : float, optional
+            Maximum radius for aperture growth.
+        sampling_step : float, optional
+            Step size for the elliptical apertures.
+
+        Returns
+        -------
+        major : ndarray
+            Radii used to compute the light profile.
+        normalized_acc : ndarray
+            Normalized cumulative light within each aperture.
+        normalized_acc_err : ndarray
+            Estimated uncertainty in the cumulative light profile.
+        """
         
         if rmax is None: 
             rmax = 8*a
@@ -54,7 +118,27 @@ class Concentration:
         return(major, normalized_acc, normalized_acc_err)
     
     def get_radius(self, radius, curve, fraction = 0.5, Naround = 2, interp_order = 3):
-        
+        """
+        Estimate the radius containing a given fraction of total flux.
+
+        Parameters
+        ----------
+        radius : ndarray
+            Radii sampled.
+        curve : ndarray
+            Normalized growth curve values.
+        fraction : float
+            Flux fraction (e.g., 0.2 or 0.8).
+        Naround : int
+            Number of points to use around the target index for interpolation.
+        interp_order : int
+            Order of spline interpolation.
+
+        Returns
+        -------
+        r_i : float
+            Estimated radius for the given flux fraction.
+        """
         #### Inner
         try:
             index_inner = int(np.where(np.absolute(curve - fraction) == np.min(np.absolute(curve - fraction)))[0])
@@ -80,13 +164,49 @@ class Concentration:
     
     def get_concentration(self, x, y, a, b, theta, method = "conselice", f_inner = 0.2, f_outter = 0.8, rmax = None, 
                           sampling_step = 1, Naround = 2, interp_order = 3):
+                          
+        """
+        Compute the concentration index using defined flux thresholds.
+
+        Parameters
+        ----------
+        x, y : float
+            Coordinates of the galaxy center.
+        a, b : float
+            Semi-major and semi-minor axes.
+        theta : float
+            Ellipticity angle (in radians).
+        method : str
+            Method for concentration ('conselice' or 'barchi').
+        f_inner : float
+            Fraction of total flux for inner radius.
+        f_outter : float
+            Fraction of total flux for outer radius.
+        rmax : float, optional
+            Maximum sampling radius.
+        sampling_step : float, optional
+            Step size for growth curve sampling.
+        Naround : int
+            Number of points around target value for interpolation.
+        interp_order : int
+            Interpolation order.
+
+        Returns
+        -------
+        c : float
+            Concentration index.
+        rinner : float
+            Radius enclosing `f_inner` fraction.
+        routter : float
+            Radius enclosing `f_outter` fraction.
+        """
         
         radius, growth_curve, growth_err = self.get_growth_curve(x, y, a, b, theta, rmax, sampling_step)
         
         rinner = self.get_radius(radius, growth_curve, f_inner, Naround, interp_order)
         routter = self.get_radius(radius, growth_curve, f_outter, Naround, interp_order)
         
-        ratio = routter/rinner
+        ratio = float(routter/rinner)
         
         if method == "conselice":
             c = 5*np.log10(ratio)
@@ -98,29 +218,33 @@ class Concentration:
         else:
             raise("Invalid method. Options are 'conselice' and 'barchi'.")
         
-        return(c, rinner, routter)
+        return(float(c), rinner, routter)
     
     def plot_growth_curve(self, x, y, a, b, theta, rmax=None, sampling_step=1, f_inner=0.2, f_outter=0.8, 
-                          Naround=2, interp_order=3, **plot_kwargs):
+                          Naround=2, interp_order=3):
         """
-        Plot the growth curve and indicate r_inner and r_outer.
-        
-        Parameters:
+        Plot the normalized growth curve and mark r_inner and r_outer.
+
+        Parameters
         ----------
+        x, y : float
+            Center of the galaxy.
+        a, b : float
+            Elliptical aperture parameters.
+        theta : float
+            Orientation angle (radians).
         rmax : float, optional
-            Maximum radius for the growth curve.
-        sampling_step : int, optional
-            Step size for sampling the growth curve.
-        f_inner : float, optional
-            Fraction of total light for r_inner.
-        f_outter : float, optional
-            Fraction of total light for r_outer.
-        Naround : int, optional
-            Number of points around the estimated radius for interpolation.
-        interp_order : int, optional
-            Order of the interpolation spline.
-        plot_kwargs : dict, optional
-            Custom plot settings, e.g., `title`, `xlabel`, `ylabel`, `colors`.
+            Maximum radius to consider.
+        sampling_step : float
+            Growth curve step size.
+        f_inner : float
+            Inner flux fraction (default is 0.2).
+        f_outter : float
+            Outer flux fraction (default is 0.8).
+        Naround : int
+            Interpolation window size.
+        interp_order : int
+            Interpolation polynomial order.
         """
         # Get the growth curve
         radius, growth_curve, growth_err = self.get_growth_curve(x, y, a, b, theta, rmax, sampling_step)
@@ -129,62 +253,77 @@ class Concentration:
         r_inner = self.get_radius(radius, growth_curve, fraction=f_inner, Naround=Naround, interp_order=interp_order)
         r_outer = self.get_radius(radius, growth_curve, fraction=f_outter, Naround=Naround, interp_order=interp_order)
 
-        # Default plot settings
-        default_settings = {
-            "title": "Growth Curve with $r_\\text{inner}$ and $r_\\text{outer}$",
-            "xlabel": "Radius (pixels)",
-            "ylabel": "Normalized Growth Curve",
-            "line_color": "blue",
-            "line_style": "-o",
-            "line_label": "Growth Curve",
-            "error_color": "lightgray",
-            "rinner_color": "green",
-            "router_color": "red",
-            "grid_alpha": 0.3,
-            "figsize": (6, 6),
-            "dpi": 200,
-            "title_fontsize": 20,
-            "legend_fontsize": 14,
-            "text_fontsize": 16,
-            "ticks_fontsize": 16
-        }
-        
-        # Update default settings with user input
-        settings = {**default_settings, **plot_kwargs}
-        
         # Plot the growth curve
-        plt.figure(figsize=settings["figsize"], dpi=settings["dpi"])
+        plt.figure(figsize=(6,6), dpi=100)
         plt.errorbar(
             radius, growth_curve, yerr=growth_err,
-            label=settings["line_label"],
-            fmt=settings["line_style"],
-            color=settings["line_color"],
-            ecolor=settings["error_color"], capsize=3
+            label="Growth Curve",
+            fmt="-o",
+            color="blue",
+            ecolor="lightgray", capsize=3
         )
         
         # Mark r_inner and r_outer
-        plt.axvline(r_inner, color=settings["rinner_color"], linestyle="--", label=f"$r_{{\\text{{inner}}}}$ = {r_inner:.2f}")
-        plt.axvline(r_outer, color=settings["router_color"], linestyle="--", label=f"$r_{{\\text{{outer}}}}$ = {r_outer:.2f}")
+        plt.axvline(r_inner, color="red", linestyle="--", label=f"$r_{{\\text{{inner}}}}$ = {r_inner:.2f}")
+        plt.axvline(r_outer, color="green", linestyle="--", label=f"$r_{{\\text{{outer}}}}$ = {r_outer:.2f}")
         
         # Highlight the corresponding fractions
-        plt.axhline(f_inner, color=settings["rinner_color"], linestyle=":", alpha=0.7)
-        plt.axhline(f_outter, color=settings["router_color"], linestyle=":", alpha=0.7)
+        plt.axhline(f_inner, color="red", linestyle=":", alpha=0.7)
+        plt.axhline(f_outter, color="green", linestyle=":", alpha=0.7)
         
         # Apply labels, title, and legend
-        plt.xlabel(settings["xlabel"], fontsize=settings["text_fontsize"])
-        plt.ylabel(settings["ylabel"], fontsize=settings["text_fontsize"])
-        plt.xticks(fontsize = settings["ticks_fontsize"])
+        plt.xlabel("Radius (pixels)", fontsize=18)
+        plt.ylabel("Normalized Growth Curve", fontsize=18)
+        plt.xticks(fontsize = 16)
         plt.yticks(fontsize = 16)
-        plt.title(settings["title"], fontsize=settings["title_fontsize"])
-        plt.legend(fontsize=settings["legend_fontsize"])
-        plt.grid(alpha=settings["grid_alpha"])
+        plt.title("Growth Curve with $r_\\text{inner}$ and $r_\\text{outer}$", fontsize=20)
+        plt.legend(fontsize=14)
+        plt.grid(alpha=0.3)
         plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
         
         
-        
+"""
+Gini_index
+==========
+
+This class computes the Gini index for a galaxy image, which quantifies the inequality
+of the light distribution, along with its corresponding Lorentz curve.
+
+Attributes
+----------
+image : ndarray
+    Input galaxy image.
+segmentation : ndarray
+    Binary segmentation mask (must match image shape).
+
+Methods
+-------
+get_gini :
+    Compute the Gini index using the Lorentz definition.
+compute_lorentz_curve :
+    Compute the cumulative pixel/light distributions.
+plot_gini_rep :
+    Plot the Lorentz curve and shade the Gini area.
+"""        
 class Gini_index:
     
     def __init__(self, image, segmentation):
+        """
+        Initialize Gini_index with image and binary segmentation.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input 2D image.
+        segmentation : ndarray
+            Binary segmentation mask.
+
+        Raises
+        ------
+        ValueError
+            If segmentation shape does not match image shape.
+        """
+
         self.image = image
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
@@ -198,16 +337,12 @@ class Gini_index:
         
     def get_gini(self):
         """
-        Calculate the Gini index for a given vector using the manual formula.
+        Compute the Gini index based on pixel intensities within the segmentation.
 
-        Parameters:
-        -----------
-        self
-
-        Returns:
-        --------
+        Returns
+        -------
         gini : float
-            The Gini index.
+            Calculated Gini index.
         """
         vector = self.image[self.segmentation == 1].flatten()
         vector = np.sort(vector)  # Sort the vector
@@ -228,17 +363,14 @@ class Gini_index:
     
     def compute_lorentz_curve(self):
         """
-        Compute the Lorentz curve for a given vector of pixel intensities.
+        Compute the Lorentz curve of pixel fluxes.
 
-        Parameters:
-        -----------
-        self
-        Returns:
-        --------
+        Returns
+        -------
         cumulative_pixels : ndarray
-            Cumulative pixel fraction (x-axis of Lorentz curve).
+            Cumulative fraction of pixels.
         cumulative_light : ndarray
-            Cumulative light fraction (y-axis of Lorentz curve).
+            Cumulative fraction of light.
         """
         vector = self.image[self.segmentation == 1].flatten()
         vector = np.sort(vector)  # Sort the vector
@@ -253,26 +385,22 @@ class Gini_index:
         return cumulative_pixels, cumulative_light
         
     
-    def plot_gini_rep(self, cumulative_pixels, cumulative_light, gini, **plot_kwargs):
-        default_settings = {
-        "title": "Lorentz Curve and Gini Index",
-        "xlabel": "Fraction of Pixels (Cumulative)",
-        "ylabel": "Fraction of Total Light (Cumulative)",
-        "lorentz_color": "blue",
-        "equality_color": "red",
-        "shade_color": "lightblue",
-        "gini_text_position": (0.6, 0.4),  # (x, y)
-        "figsize": (6, 6),
-        "dpi": 100,
-        "legend_fontsize": 14,
-        "text_fontsize": 18,
-        "ticks_fontsize": 16,
-        "grid_alpha": 0.3,
-         }
-        
-        # Update settings with user-provided customizations
-        settings = {**default_settings, **plot_kwargs}
-    
+    def plot_gini_rep(self):
+        cumulative_pixels, cumulative_light = self.compute_lorentz_curve()
+        gini = self.get_gini()
+        """
+        Plot Lorentz curve and Gini index visual representation.
+
+        Parameters
+        ----------
+        cumulative_pixels : ndarray
+            Cumulative pixel distribution.
+        cumulative_light : ndarray
+            Cumulative light distribution.
+        gini : float
+            Gini index value.
+        """
+                
         # Ensure the Lorentz curve starts and ends at (0,0) and (1,1)
         cumulative_pixels = np.insert(cumulative_pixels, 0, 0)
         cumulative_light = np.insert(cumulative_light, 0, 0)
@@ -280,39 +408,70 @@ class Gini_index:
         cumulative_light = np.append(cumulative_light, 1)
 
         # Plotting
-        plt.figure(figsize=settings["figsize"], dpi=200)
+        plt.figure(figsize=(6,6), dpi=200)
 
         # Lorentz curve
         plt.plot(cumulative_pixels, cumulative_light, label="Lorentz Curve", 
-                 color=settings["lorentz_color"], linewidth=2)
+                 color="blue", linewidth=2)
 
         # Equality line
         plt.plot([0, 1], [0, 1], label="Equality Line (45°)", 
-                 color=settings["equality_color"], linestyle="--")
+                 color="red", linestyle="--")
 
         # Shade the area between the Lorentz curve and the equality line
         plt.fill_between(cumulative_pixels, cumulative_light, cumulative_pixels, 
-                         color=settings["shade_color"], alpha=0.5, label="Area = Gini Index")
+                         color="lightblue", alpha=0.5, label="Area = Gini Index")
 
         # Annotate Gini index
-        plt.text(settings["gini_text_position"][0], settings["gini_text_position"][1], 
-                 f"Gini Index \n {gini:.3f}", fontsize=settings["text_fontsize"]-2, 
+        plt.text(0.6, 0.4, 
+                 f"Gini Index \n {gini:.3f}", fontsize=16, 
                  bbox=dict(facecolor='white', alpha=0.7))
 
         # Labels, title, legend, and grid
-        plt.xlabel(settings["xlabel"], fontsize=settings["text_fontsize"])
-        plt.ylabel(settings["ylabel"], fontsize=settings["text_fontsize"])
-        plt.xticks(fontsize = settings['ticks_fontsize'])
-        plt.yticks(fontsize = settings['ticks_fontsize'])
-        plt.title(settings["title"], fontsize=settings["text_fontsize"])
-        plt.legend(fontsize=settings["legend_fontsize"])
-        plt.grid(alpha=settings["grid_alpha"])
+        plt.xlabel("Fraction of Pixels (Cumulative)", fontsize=18)
+        plt.ylabel("Fraction of Total Light (Cumulative)", fontsize=18)
+        plt.xticks(fontsize = 16)
+        plt.yticks(fontsize = 16)
+        plt.title("Lorentz Curve and Gini Index", fontsize=20)
+        plt.legend(fontsize=14)
+        plt.grid(alpha=0.3)
         plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
         
-        
-        
+"""
+Moment_of_light
+===============
+
+Class to calculate the second-order moment of a galaxy light distribution,
+including the M20 morphological index (Lotz et al. 2004).
+
+Attributes
+----------
+image : ndarray
+    2D input image array.
+segmentation : ndarray
+    Binary segmentation mask (same shape as image).
+
+Methods
+-------
+get_m20 :
+    Compute the M20 index from the light distribution.
+plot_M20_contributors :
+    Plot the image with pixels contributing to the brightest 20% of the flux.
+"""
+
 class Moment_of_light:
     def __init__(self, image, segmentation):
+        """
+        Initialize the Moment_of_light object.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input 2D galaxy image.
+        segmentation : ndarray
+            Binary segmentation mask.
+        """
+
         self.image = image
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
@@ -320,106 +479,222 @@ class Moment_of_light:
         if not np.array_equal(np.unique(self.segmentation), [0, 1]):
             warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
             self.segmentation = (self.segmentation > 0).astype(int)
-    
-    def get_m20(self, x0, y0, f = 0.2):
+    def _find_minimum_moment_center(self, x0=None, y0=None, max_iter=100):
+        """
+        Brute-force 3x3 descent to minimize total second-order moment.
+
+        Parameters
+        ----------
+        x0, y0 : float or None
+            Initial guess for the center. If None, use flux-weighted centroid.
+        max_iter : int
+            Maximum number of iterations for descent.
+
+        Returns
+        -------
+        x0_opt, y0_opt : float
+            Coordinates that minimize the total second-order moment.
+        """
+        image = self.image * self.segmentation
+        ygrid, xgrid = np.indices(image.shape)
+        valid = image > 0
+
+        x = xgrid[valid]
+        y = ygrid[valid]
+        f = image[valid]
+
+        def total_moment(xc, yc):
+            return np.sum(f * ((x - xc) ** 2 + (y - yc) ** 2))
+
+        # Use user-provided center or fallback to flux-weighted centroid
+        if x0 is None or y0 is None:
+            x0 = np.sum(x * f) / np.sum(f)
+            y0 = np.sum(y * f) / np.sum(f)
+
+        for _ in range(max_iter):
+            x_range = [x0 - 1, x0, x0 + 1]
+            y_range = [y0 - 1, y0, y0 + 1]
+            candidates = [(xi, yi) for xi in x_range for yi in y_range]
+            moments = [total_moment(xi, yi) for xi, yi in candidates]
+
+            # Choose best
+            i_min = np.argmin(moments)
+            x_new, y_new = candidates[i_min]
+
+            # Stop if already optimal
+            if (x_new == x0) and (y_new == y0):
+                break
+
+            x0, y0 = x_new, y_new
+
+        return x0, y0
+
+
+    def get_m20(self, x0=None, y0=None, f=0.2, minimize_total=False):
+        """
+        Calculate the M20 morphological index.
+
+        Parameters
+        ----------
+        x0, y0 : float, optional
+            Galaxy center coordinates (overridden if minimize_total is True).
+        f : float
+            Fraction of the total flux for brightest pixels (default: 0.2).
+        minimize_total : bool
+            Whether to optimize the center before computing M20.
+
+        Returns
+        -------
+        m20 : float
+            Computed M20 index.
+        x0, y0 : float
+            Center coordinates used.
+        """     
+        # Compute optimal center if requested
         
+        if minimize_total:
+            x0, y0 = self._find_minimum_moment_center(x0, y0)
+
+        elif (x0 is None) or (y0 is None):
+            x0 = len(self.image)//2
+            y0 = len(self.image)//2                  
+          
         # Apply segmentation mask
         analysis_image = self.image * self.segmentation
-        
-        # Compute total second-order moment
-        M = skimage.measure.moments_central(analysis_image, center=(y0, x0), order=2)    
-        M_tot = M[0, 2] + M[2, 0]
+        y, x = np.indices(analysis_image.shape)
+        valid = analysis_image > 0
+        f_i = analysis_image[valid]
+        x = x[valid]
+        y = y[valid]
 
-        # Calculate flux threshold for top 20% brightest flux
-        flux_sorted = np.sort(analysis_image.flatten())
-        flux_fraction = np.cumsum(flux_sorted) / np.sum(flux_sorted)
+        total_flux = np.sum(f_i)
+        total_moment = np.sum(f_i * ((x - x0)**2 + (y - y0)**2))
 
-        # Ensure flux_fraction reaches 1 - f
-        if np.any(flux_fraction >= 1 - f):
-            flux_sorted_cut = flux_sorted[flux_fraction >= 1 - f]
-            flux_threshold = flux_sorted_cut[0]
-        else:
-            raise ValueError("Insufficient flux in the image to isolate top fraction.")
+        # Sort pixels by flux
+        sorted_idx = np.argsort(f_i)[::-1]
+        flux_20 = f * total_flux
+        sum_flux = 0
+        bright_moment = 0
+        idx = 0
 
-        # Isolate the brightest flux
-        image_f = np.where(analysis_image >= flux_threshold, analysis_image, 0.0)
+        while sum_flux < flux_20 and idx < len(sorted_idx):
+            i = sorted_idx[idx]
+            sum_flux += f_i[i]
+            bright_moment += f_i[i] * ((x[i] - x0)**2 + (y[i] - y0)**2)
+            idx += 1
 
-        # Compute moments for the brightest flux
-        M2 = skimage.measure.moments_central(image_f, center=(y0, x0), order=2)
-        M_f = M2[0, 2] + M2[2, 0]
-        
-        self.image_f = image_f  # Save for plotting
-        self.flux_threshold = flux_threshold  # Save for annotations
-        # Calculate M20
-        m_f = np.log10(M_f / M_tot)
+        m20 = np.log10(bright_moment / total_moment)
+        return float(m20), float(x0), float(y0)
 
-
-        return(m_f)
-    
-    def plot_M20_contributors(self, x0, y0, **kwargs):
+    def plot_M20_contributors(self, x0=None, y0=None, f=0.2, minimize_total=False):
         """
-        Plot the image with pixels contributing to M_f highlighted, allowing plot customization.
-        
+        Plot the image with pixels contributing to M_f highlighted, using the most recent M20 calculation.
+
         Parameters:
         ----------
-        x0 : float
-            X-coordinate of the galaxy center.
-        y0 : float
-            Y-coordinate of the galaxy center.
-        **kwargs : dict
-            Custom plot settings, including:
-            - `title` (str): Title of the plot.
-            - `xlabel` (str): Label for the x-axis.
-            - `ylabel` (str): Label for the y-axis.
-            - `image_cmap` (str): Colormap for the background image.
-            - `highlight_cmap` (str): Colormap for highlighting M_f contributors.
-            - `alpha` (float): Transparency for the highlighted pixels (0 to 1).
-            - `center_color` (str): Color for marking the galaxy center.
-            - `center_marker` (str): Marker style for the galaxy center.
+        x0 : float, optional
+            X-coordinate of the galaxy center. Ignored if minimize_total is True.
+        y0 : float, optional
+            Y-coordinate of the galaxy center. Ignored if minimize_total is True.
+        f : float
+            Fraction of the total flux (default: 0.2 for M20).
+        minimize_total : bool
+            Whether to minimize total second-order moment to determine the center.
         """
-        if not hasattr(self, 'image_f'):
-            raise AttributeError("Run the M20 method first to calculate contributing pixels.")
+        
+        # --- Recompute M20 and contributors ---
+        if minimize_total or x0 is None or y0 is None:
+            x0, y0 = self._find_minimum_moment_center()
 
-        # Extract customization options or set defaults
-        title = kwargs.get("title", "M20 Contributors")
-        xlabel = kwargs.get("xlabel", "X Pixels")
-        ylabel = kwargs.get("ylabel", "Y Pixels")
-        image_cmap = kwargs.get("image_cmap", "viridis")
-        highlight_cmap = kwargs.get("highlight_cmap", "Reds")
-        alpha = kwargs.get("alpha", 0.6)
-        center_color = kwargs.get("center_color", "blue")
-        center_marker = kwargs.get("center_marker", "x")
-        figsize = kwargs.get("figsize", (6,6))
-        dpi = kwargs.get("dpi", 100)
-        title_fontsize = kwargs.get("title_fontsize", 20)
-        ticks_fontsize = kwargs.get("ticks_fontsize", 16)
-        text_fontsize = kwargs.get("text_fontsize", 18)
-        legend_fontsize = kwargs.get("legend_fontsize", 16)
-        
-        plt.figure(figsize=(8, 8), dpi = 200)
-        # Plot the original image
-        m, s = np.nanmedian(self.image[self.image!=0]), np.nanstd(self.image[self.image!=0])
-        plt.imshow(self.image*self.segmentation, cmap="gray_r", origin='lower', vmin=0, vmax=m+s)
-        
-        # Overlay the contributing pixels
-        highlight_coords = np.where(self.image_f > 0)
-        plt.scatter(highlight_coords[1] + 0.5, highlight_coords[0] + 0.5, color='red', marker='x', label='Contributing Pixels')
-        
-        # Mark the center
-        plt.scatter([x0], [y0], color=center_color, marker=center_marker, label="Galaxy Center")
+        analysis_image = self.image * self.segmentation
+        y, x = np.indices(analysis_image.shape)
+        valid = analysis_image > 0
+        f_i = analysis_image[valid]
+        x = x[valid]
+        y = y[valid]
 
-        plt.title(title, fontsize=title_fontsize)
-        plt.xlabel(xlabel, fontsize=text_fontsize)
-        plt.ylabel(ylabel, fontsize=text_fontsize)
-        plt.xticks(fontsize = ticks_fontsize)
-        plt.yticks(fontsize = ticks_fontsize)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        plt.legend(loc="upper right", fontsize=legend_fontsize)
+        total_flux = np.sum(f_i)
+
+        # Sort by flux and find brightest pixels
+        sorted_idx = np.argsort(f_i)[::-1]
+        flux_20 = f * total_flux
+        sum_flux = 0
+        idx = 0
+        m20_mask = np.zeros_like(f_i, dtype=bool)
+
+        while sum_flux < flux_20 and idx < len(sorted_idx):
+            i = sorted_idx[idx]
+            sum_flux += f_i[i]
+            m20_mask[i] = True
+            idx += 1
+
+        # Create pixel mask for plotting
+        highlight_coords = (y[m20_mask], x[m20_mask])
+
+        # Plot image with contributing pixels
+        plt.figure(figsize=(6,6), dpi=100)
+        m, s = np.nanmedian(self.image[self.image != 0]), np.nanstd(self.image[self.image != 0])
+        plt.imshow(self.image * self.segmentation, cmap="gray_r", origin='lower', vmin=0, vmax=m + s)
+
+        # Overlay contributing pixels
+        plt.scatter(highlight_coords[1] + 0.5, highlight_coords[0] + 0.5, color="red", alpha=0.7,
+                    label=f'Top {int(f * 100)}% Flux Pixels', marker='x')
+
+        # Mark the galaxy center
+        plt.scatter([x0], [y0], color="cyan", marker="+", s=40, label='M20 Center')
+
+        plt.title('M20 Components: Center + Brightest Pixels', fontsize=16)
+        plt.xlabel("X", fontsize=16)
+        plt.ylabel("Y", fontsize=16)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+        plt.tick_params(direction='in', size=7, left=True, right=True, bottom=True, top=True)
+        plt.legend(loc="upper right")
         plt.grid(False)
+        plt.tight_layout()
         
+        
+        
+"""
+Shannon_entropy
+===============
 
+Class to compute the Shannon entropy of a galaxy image within a segmentation mask,
+based on a histogram of pixel intensities.
+
+Attributes
+----------
+image : ndarray
+    2D galaxy image.
+segmentation : ndarray
+    Binary segmentation mask (0 or 1, same shape as image).
+results : dict
+    Optional storage for intermediate entropy-related results.
+
+Methods
+-------
+get_entropy :
+    Compute the entropy from a pixel histogram.
+plot_entropy_frame :
+    Plot histogram and cumulative distribution function (CDF) of the pixel values.
+"""
 class Shannon_entropy:
     def __init__(self, image, segmentation):
+        """
+        Initialize the Shannon_entropy object.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input 2D galaxy image.
+        segmentation : ndarray
+            Binary mask where 1 indicates the region of interest.
+
+        Raises
+        ------
+        ValueError
+            If segmentation and image dimensions do not match.
+        """
         self.image = image
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
@@ -430,6 +705,23 @@ class Shannon_entropy:
         
         self.results = {}    
     def get_entropy(self, normalize = True, nbins = 1):
+    
+        """
+        Compute Shannon entropy using a histogram of pixel intensities.
+
+        Parameters
+        ----------
+        normalize : bool, optional
+            Whether to normalize the entropy by the maximum possible entropy (log10(nbins)).
+        nbins : int
+            Number of histogram bins. Must be > 0.
+
+        Returns
+        -------
+        entropy : float
+            Shannon entropy value.
+        """
+
       
         if nbins <= 0:
             raise ValueError("Bins number must be positive.")
@@ -448,25 +740,14 @@ class Shannon_entropy:
     
     def plot_entropy_frame(self, bins="auto", nbins=100, **kwargs):
         """
-    
-        Plot the normalized histogram and cumulative distribution function (CDF) of the data.
+ 	Plot histogram and cumulative distribution of pixel values within the mask.
 
-        Parameters:
+        Parameters
         ----------
         bins : str
-            Method to determine the number of bins. Options: 'auto', 'fixed'.
+            'auto' for adaptive binning (Freedman-Diaconis), or 'fixed' to use `nbins`.
         nbins : int
-            Number of bins if `bins` is 'fixed'.
-        **kwargs : dict
-            Custom plot settings, including:
-            - `title` (str): Title of the plot.
-            - `xlabel` (str): Label for the x-axis.
-            - `hist_ylabel` (str): Label for the histogram's y-axis.
-            - `cdf_ylabel` (str): Label for the CDF's y-axis.
-            - `hist_color` (str): Color for the histogram bars.
-            - `cdf_color` (str): Color for the CDF line.
-            - `alpha` (float): Transparency for the histogram bars (0 to 1).
-            - `line_width` (float): Line width for the CDF line.
+            Number of bins used when `bins='fixed'`.
         """
         line = self.image[self.segmentation != 0].flatten()
 
@@ -486,61 +767,70 @@ class Shannon_entropy:
         normalized_counts = counts / counts.max()  # Normalize by the max count
         normalized_cdf = cumulative_counts / cumulative_counts[-1]  # Normalize by the total counts
 
-        # Extract customization options
-        title = kwargs.get("title", "Data Histogram and CDF")
-        xlabel = kwargs.get("xlabel", "Pixel Intensity")
-        hist_ylabel = kwargs.get("hist_ylabel", "Normalized Frequency")
-        cdf_ylabel = kwargs.get("cdf_ylabel", "Cumulative Fraction")
-        hist_color = kwargs.get("hist_color", "blue")
-        cdf_color = kwargs.get("cdf_color", "red")
-        alpha = kwargs.get("alpha", 0.6)
-        line_width = kwargs.get("line_width", 1)
-        figsize = kwargs.get("figsize", (6,6))
-        dpi = kwargs.get("dpi", 100)
-        title_fontsize = kwargs.get("title_fontsize", 20)
-        ticks_fontsize = kwargs.get("ticks_fontsize", 16)
-        text_fontsize = kwargs.get("text_fontsize", 18)
-        legend_fontsize = kwargs.get("legend_fontsize", 16)
-        
         # Create a figure and two y-axes
-        fig, ax1 = plt.subplots(figsize=figsize, dpi = 200)
+        fig, ax1 = plt.subplots(figsize=(6,6), dpi = 200)
 
         # Plot normalized histogram
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
         ax1.bar(bin_centers, normalized_counts, width=bin_edges[1] - bin_edges[0], 
-                color=hist_color, alpha=alpha, label="Histogram")
-        ax1.set_ylabel(hist_ylabel, fontsize=text_fontsize, color=hist_color)
-        ax1.tick_params(axis='y', labelcolor=hist_color)
-        plt.xticks(fontsize = ticks_fontsize)
-        plt.yticks(fontsize = ticks_fontsize)
+                color="blue", alpha=0.6, label="Histogram")
+        ax1.set_ylabel("Normalized Frequency", fontsize=18, color="blue")
+        ax1.tick_params(axis='y', labelcolor="blue")
+        plt.xticks(fontsize = 16)
+        plt.yticks(fontsize = 16)
         plt.tick_params(direction = 'in', size = 7, left = True, bottom = True, top = True, right = True)
         
         # Create second y-axis for CDF
         ax2 = ax1.twinx()
-        ax2.plot(bin_centers, normalized_cdf, color=cdf_color, linewidth=line_width, label="CDF")
-        ax2.set_ylabel(cdf_ylabel, fontsize=text_fontsize, color=cdf_color)
-        ax2.tick_params(axis='y', labelcolor=cdf_color)
+        ax2.plot(bin_centers, normalized_cdf, color="red", linewidth=1, label="CDF")
+        ax2.set_ylabel("Cumulative Fraction", fontsize=18, color="red")
+        ax2.tick_params(axis='y', labelcolor="red")
 
         # Set y-axis limits for both axes
         ax1.set_ylim(0, 1)
         ax2.set_ylim(0, 1)
 
         # Add title and labels
-        ax1.set_title(title, fontsize=title_fontsize)
-        ax1.set_xlabel(xlabel, fontsize=text_fontsize)
+        ax1.set_title("Data Histogram and CDF", fontsize=20)
+        ax1.set_xlabel("Pixel intensity", fontsize=18)
 
         # Add legends
-        ax1.legend(loc="upper left", fontsize=legend_fontsize)
-        ax2.legend(loc="upper right", fontsize=legend_fontsize)
-        plt.xticks(fontsize = ticks_fontsize)
-        plt.yticks(fontsize = ticks_fontsize)
+        ax1.legend(loc="upper left", fontsize=16)
+        ax2.legend(loc="upper right", fontsize=16)
+        plt.xticks(fontsize = 16)
+        plt.yticks(fontsize = 16)
         plt.tick_params(direction = 'in', size = 7, left = True, bottom = True, top = True, right = True)
         
         # Grid and display
         plt.grid(alpha=0.3)
+        
+        
+        
+"""
+Asymmetry
+=========
 
+This class implements different ways to calculate the asymmetry of a galaxy light distribution, including:
+- Conselice (2003) absolute/rms asymmetry
+- Pixel-wise normalized asymmetry (Sampaio)
+- Correlation-based asymmetry (Barchi)
+
+It supports custom segmentation masks, optional noise correction, and center optimization.
+
+Attributes
+----------
+image : ndarray
+    Input 2D galaxy image.
+segmentation : ndarray
+    Binary segmentation mask (same shape as image).
+noise : ndarray, optional
+    Optional noise image (same shape as image).
+angle : float
+    Rotation angle in degrees (default is 180).
+"""
 class Asymmetry:
     def __init__(self, image, angle = 180, segmentation = None, noise = None):
+        """Initialize the Asymmetry calculator."""
         self.image = image
         self.segmentation = segmentation if segmentation is not None else np.ones_like(image,dtype=int)
         if self.segmentation.shape != self.image.shape:
@@ -580,30 +870,35 @@ class Asymmetry:
 
     def get_conselice_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50):
         """
-        Compute Conselice-style asymmetry, with independent minimization for galaxy and noise terms.
-    
+        Compute Conselice-style asymmetry with iterative center minimization.
+
         Parameters
         ----------
         method : str
-            'absolute' or 'rms'
+            Asymmetry type ('absolute' or 'rms').
         pixel_comparison : str
-            'equal' or 'simple'
+            Pixel overlap mode ('equal' or 'simple').
         max_iter : int
-            Max number of iterations for brute-force center search
-    
+            Maximum number of iterations for center optimization.
+
         Returns
         -------
         A_total : float
-            Final asymmetry (A_gal - A_noise)
+            Final asymmetry (A_gal - A_noise).
         A_gal : float
-            Minimized galaxy asymmetry
+            Galaxy asymmetry.
         A_noise : float
-            Minimized background asymmetry
+            Background noise asymmetry.
         center_gal : tuple
-            Best-fit center for galaxy asymmetry
+            Best-fit center for minimal galaxy asymmetry.
         center_noise : tuple or None
-            Best-fit center for noise asymmetry (None if noise not provided)
+            Best-fit center for minimal noise asymmetry (if available).
+        niter_gal : int
+            Iterations to converge on galaxy center.
+        niter_noise : int or None
+            Iterations to converge on noise center.
         """
+        
         # --- Helper to evaluate asymmetry at a given center ---
         def asymmetry(I, center, method='absolute'):
             R = self._rotate(I, center)
@@ -662,34 +957,37 @@ class Asymmetry:
     
         A_total = A_gal - A_noise
     
-        return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
+        return float(A_total), float(A_gal), float(A_noise), tuple(center_gal), tuple(center_noise), int(niter_gal), int(niter_noise)
 
     def get_sampaio_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50):
         """
-        Compute custom Sampaio-style asymmetry (pixel-wise normalized), with separate minimization
-        for galaxy and noise asymmetries.
-    
+        Compute pixel-wise normalized asymmetry as described in Sampaio et al.
+
         Parameters
         ----------
         method : str
-            'absolute' or 'rms'
+            'absolute' or 'rms'.
         pixel_comparison : str
-            'equal' or 'simple'
+            'equal' or 'simple'.
         max_iter : int
-            Max number of iterations for brute-force center search
-    
+            Maximum number of iterations for minimization.
+
         Returns
         -------
         A_total : float
-            Final asymmetry (A_gal - A_noise)
+            Net asymmetry.
         A_gal : float
-            Galaxy asymmetry
+            Galaxy-only asymmetry.
         A_noise : float
-            Noise asymmetry
+            Noise-only asymmetry.
         center_gal : tuple
-            Minimizing center for galaxy
+            Minimizing center for galaxy.
         center_noise : tuple or None
-            Minimizing center for noise (None if noise is not given)
+            Minimizing center for noise.
+        niter_gal : int
+            Number of iterations to minimize galaxy term.
+        niter_noise : int or None
+            Number of iterations for noise term.
         """
     
         def asymmetry(I, center, method='absolute'):
@@ -752,25 +1050,27 @@ class Asymmetry:
 
     def get_barchi_asymmetry(self, corr_type='pearson', pixel_comparison='equal', max_iter=50):
         """
-        Compute Barchi-style asymmetry (1 - correlation), with brute-force center optimization.
-    
+        Compute Barchi-style asymmetry: 1 - correlation.
+
         Parameters
         ----------
         corr_type : str
-            'pearson' or 'spearman'
+            Correlation type ('pearson' or 'spearman').
         pixel_comparison : str
-            'equal' or 'simple'
+            Pixel alignment criteria.
         max_iter : int
-            Max number of iterations for brute-force center search
-    
+            Iteration limit for brute-force center search.
+
         Returns
         -------
         A_barchi : float
-            Final asymmetry = 1 - r
+            Asymmetry score (1 - r).
         r : float
-            Correlation coefficient
+            Correlation coefficient.
         center : tuple
-            Optimized center coordinates
+            Optimized center.
+        niter : int
+            Number of iterations performed.
         """
     
         def correlation(center):
@@ -825,6 +1125,14 @@ class Asymmetry:
         return A_barchi, r_max, center, niter
 
     def plot_asymmetry_scatter(self, comparison="equal"):
+        """
+        Plot scatter diagram of original vs. rotated pixels.
+
+        Parameters
+        ----------
+        comparison : str
+            Masking method: 'equal' or 'simple'.
+        """
         original = self.image * self.segmentation
         rotated = self._rotate(original, center=None)  # use self.angle
     
@@ -879,6 +1187,10 @@ class Asymmetry:
             plt.tight_layout()
 
     def plot_asymmetry_comparison(self):
+        """
+        Display side-by-side comparison of original, rotated, and residual images provided as input. Not the subtraction recentering to the central coordinates minimizing asymmetry.
+        """
+        
         original = self.image * self.segmentation
         rotated = self._rotate(original)
         m, s = np.median(original[self.segmentation != 0]), np.std(original[self.segmentation != 0])
@@ -912,9 +1224,63 @@ class Asymmetry:
         plt.tight_layout()
 
             
+"""
+Smoothness
+==========
+
+A class to compute the Smoothness (or Clumpiness) of a galaxy image using different definitions,
+including Conselice (2003), Sampaio, and Barchi-style methods.
+
+Attributes
+----------
+image : ndarray
+    2D array representing the galaxy image.
+segmentation : ndarray
+    Binary segmentation mask (0 or 1).
+noise : ndarray, optional
+    Optional 2D noise map for background correction.
+smoothed_image : ndarray
+    Smoothed version of the input image.
+smoothed_noise : ndarray or None
+    Smoothed version of the noise map, if provided.
+
+Methods
+-------
+get_smoothness_conselice :
+    Compute smoothness using Conselice et al. (2003) definition.
+get_smoothness_sampaio :
+    Compute pixel-wise normalized smoothness (Sampaio definition).
+get_smoothness_barchi :
+    Compute smoothness as 1 - correlation (Barchi definition).
+plot_smoothness_comparison :
+    Display original, smoothed, and residual images.
+plot_smoothness_scatter :
+    Display scatter plots between original and smoothed pixels.
+"""
 class Smoothness:
     def __init__(self, image, segmentation = None, noise = None, smoothing_factor = 5, 
              smoothing_filter = "box"):
+        """
+        Initialize the Smoothness object and compute smoothed image/noise.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input 2D galaxy image.
+        segmentation : ndarray, optional
+            Binary segmentation mask (must match image shape).
+        noise : ndarray, optional
+            Noise image to correct background fluctuations.
+        smoothing_factor : float or int
+            Size of the smoothing kernel.
+        smoothing_filter : str
+            Type of filter to use: 'box', 'gaussian', or 'tophat'.
+
+        Raises
+        ------
+        ValueError
+            If segmentation shape does not match image shape or smoothing is invalid.
+        """
         if segmentation.shape != image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
         
@@ -988,7 +1354,7 @@ class Smoothness:
         diff[diff < 0] = 0
         # Normalize by total galaxy flux
         total_flux = np.sum(I[mask])
-        S = np.sum(diff) / total_flux
+        S = float(10*np.sum(diff) / total_flux)
     
         return S
 
@@ -997,7 +1363,7 @@ class Smoothness:
         Compute the custom Smoothness parameter (Sampaio et al.), based on a 
         normalized per-pixel residual between the original and smoothed image.
     
-        This function assumes any central masking (e.g., inner 0.25 R50) has 
+        This function assumes any central masking has 
         already been applied to the segmentation mask.
     
         Returns
@@ -1072,6 +1438,10 @@ class Smoothness:
         return S, rho
     
     def plot_smoothness_comparison(self):
+        """
+        Plot the original, smoothed, and residual images for both image and noise maps.
+        """
+        
         def plot_panel(img, title, vmin=None, vmax=None):
             plt.title(title, fontsize=20)
             plt.imshow(img, cmap="gray_r", interpolation="nearest", origin="lower", vmin=vmin, vmax=vmax)
@@ -1131,6 +1501,10 @@ class Smoothness:
 
 
     def plot_smoothness_scatter(self):
+        """
+        Plot scatter diagrams comparing original vs. smoothed pixels (and noise if available).
+        """
+        
         def prepare_vectors(img1, img2):
             img1[img1 < 0] = 0
             img2[img2 < 0] = 0
@@ -1175,735 +1549,46 @@ class Smoothness:
             plt.xticks(fontsize=16)
             plt.yticks(fontsize=16)
             plt.tick_params(direction='in', size=7, left=True, right=True, bottom=True, top=True)
-
-
-
-    
-# class Smoothness2:
-#     def __init__(self, image, segmentation = None, noise = None, smoothing_factor = 5, 
-#                  smoothing_filter = "box"):
-#         if segmentation.shape != image.shape:
-#             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        
-#         if not np.array_equal(np.unique(segmentation), [0, 1]):
-#             warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-#             segmentation = (segmentation > 0).astype(int)
-        
-#         if not isinstance(smoothing_factor, (float, int)) or smoothing_factor < 0:
-#             raise ValueError("Invalid smoothing factor value. Must be float or int greater than zero.")
-
-#         if smoothing_filter == "box":
-#             kernel = Box2DKernel(round(smoothing_factor))
-            
-#         elif smoothing_filter == "tophat":
-#             kernel = Tophat2DKernel(round(smoothing_factor))
-            
-#         elif smoothing_filter == "gaussian":
-#             kernel = Gaussian2DKernel(x_stddev = round(smoothing_factor),
-#                                       y_stddev = round(smoothing_factor))
-#         else:
-#             raise Exception("Invalid smoothing filter. Options are 'box', 'gaussian', and 'tophat'.")
-        
-            
-        
-#         smoothed = convolve(image, 
-#                             kernel, 
-#                             normalize_kernel=True)
-        
-#         if noise is not None:
-#             if not isinstance(noise, (np.ndarray, list)):
-#                 raise TypeError("Noise must be a numpy array or a list.")
-
-#             noise = np.array(noise)  # Ensure noise is a numpy array
-#             if noise.shape != segmentation.shape or noise.shape != image.shape:
-#                 raise ValueError("Noise dimensions must match the dimensions of the segmentation mask and image.")
-#             smoothed_noise = convolve(noise, 
-#                                       kernel, 
-#                                       normalize_kernel=True)
-        
-#         self.image = image
-#         self.segmentation = segmentation if segmentation is not None else np.ones_like(image,dtype=int)
-#         self.noise = noise
-#         self.smoothed_image = smoothed
-#         self.smoothed_noise = smoothed_noise
-#         self.results = {}
-    
-#     def smoothness_from_config(self, config, variation = 2):
-#         S_methods = config.get('metrics_params', {}).get('S_params', {}).get('S_method', ['conselice'])
-#         xc,yc = round(len(self.image[0])/2), round(len(self.image)/2)
-    
-#         vec_final, vec_galaxy, vec_noise = [], [], []
-#         for s_method in S_methods:
-
-#             for dx in variation:
-#                 for dy in variation:
-#                     image_i = centralize_on_main_obj(xc + dx, yc + dy, self.image, size_method = "auto")
-#                     noise_i = centralize_on_main_obj(xc + dx, yc + dy, self.noise, size_method = "auto")
-#                     segmented_i = centralize_on_main_obj(xc, yc, self.segmentation, size_method = "input", size = len(image_i))
-                   
-#                     if s_method == "conselice":
-#                         S_final, S_galaxy, S_noise = self.conselice_smoothness()
-
-#                     elif s_method == "barchi":
-#                         S_final, S_galaxy, S_noise = self.barchi_smoothness()
-
-#                     elif s_method == "sampaio":
-#                         S_final, S_galaxy, S_noise = self.sampaio_smoothness()
                 
-#                     vec_final.append(S_final)
-#                     vec_galaxy.append(S_galaxy)
-#                     vec_noise.append(S_noise)
-
-#             self.results["Sfinal_" + s_method] = vec_final[round(len(vec_final)/2)]
-#             self.results["Sfinal_min_" + s_method] = np.min(vec_final)
-#             self.results["Sfinal_std_" + s_method] = 0.743*(np.quantile(vec_final, 0.75) - np.quantile(vec_final, 0.25))
-
-#             self.results["Sgalaxy_" + s_method] = vec_galaxy[round(len(vec_galaxy)/2)]
-#             self.results["Sgalaxy_min_" + s_method] = np.min(vec_galaxy)
-#             self.results["Sgalaxy_std_" + s_method] = 0.743*(np.quantile(vec_galaxy, 0.75) - np.quantile(vec_galaxy, 0.25))
-
-#             self.results["Snoise_" + s_method] = vec_noise[round(len(vec_noise)/2)]
-#             self.results["Snoise_min_" + s_method] = np.min(vec_noise)
-#             self.results["Snoise_std_" + s_method] = 0.743*(np.quantile(vec_noise, 0.75) - np.quantile(vec_noise, 0.25))
-#         return(self.results)
-    
-        
-#     def conselice_smoothness(self):
-#         original_image = self.image * self.segmentation
-#         smoothed_image = self.smoothed_image * self.segmentation
-        
-#         original_image[(original_image <= 0) & (self.segmentation == 1)] = 0
-#         smoothed_image[(original_image <= 0) & (self.segmentation == 1)] = 0
-        
-#         v1 = original_image[(original_image > 0)].flatten()
-#         v2 = smoothed_image[(original_image > 0)].flatten()
-        
-#         sum_i = np.absolute(v1 - v2)/v1    
-#         Npix = len(sum_i)
-#         S_galaxy = np.sum(sum_i)/(2*Npix)
-        
-#         if self.noise is not None:
-#             noise_original = self.noise * self.segmentation
-#             noise_smoothed = self.smoothed_noise * self.segmentation
-            
-#             noise_original[(original_image <= 0) & (self.segmentation == 1)] = 0
-#             noise_smoothed[(original_image <= 0) & (self.segmentation == 1)] = 0
-      
-#             v3 = noise_original[(original_image > 0)].flatten()
-#             v4 = noise_smoothed[(original_image > 0)].flatten()
-            
-#             S_noise = np.sum(np.absolute(v3-v4)/v1)/(2*Npix)
-            
-#             sum_i = sum_i - (v3/v1)
-                        
-        
-#         S_final = np.sum(sum_i)/(2*Npix)
-        
-#         return(S_final, S_galaxy, S_noise)
-    
-    
-#     def barchi_smoothness(self):
-#         original_image = self.image * self.segmentation
-#         smoothed_image = self.smoothed_image * self.segmentation
-        
-#         original_image[(original_image < 0)] = 0
-#         smoothed_image[(smoothed_image < 0)] = 0
-
-#         v1 = original_image[(original_image!=0) & (smoothed_image!=0)].flatten()
-#         v2 = smoothed_image[(original_image!=0) & (smoothed_image!=0)].flatten()        
-#         coeff = stats.spearmanr(v1, v2)
-
-#         S_galaxy = float(1-coeff[0])
-        
-#         if self.noise is not None:
-            
-#             noise_original = self.noise * self.segmentation
-#             noise_smoothed = self.smoothed_noise * self.segmentation
-            
-#             noise_original[(noise_original < 0)] = 0
-#             noise_smoothed[(noise_smoothed < 0)] = 0
-
-#             v3 = noise_original[(noise_original!=0) & (noise_smoothed!=0)].flatten()
-#             v4 = noise_smoothed[(noise_original!=0) & (noise_smoothed!=0)].flatten()
-         
-#             coeff = stats.spearmanr(v3, v4)
-#             S_noise = float(1-coeff[0])
-            
-#             return(S_galaxy - S_noise, S_galaxy, S_noise)
-        
-#         else:
-#             return(S_galaxy)
-        
-#     def sampaio_smoothness(self):
-#         original_image = self.image * self.segmentation
-#         smoothed_image = self.smoothed_image * self.segmentation
-        
-#         original_image[(original_image < 0)] = 0
-#         smoothed_image[(smoothed_image < 0)] = 0
-        
-#         mask = original_image!=0
-#         Nnorm = len(original_image[mask])
-
-#         diff = (original_image - smoothed_image)[mask]/original_image[mask]
-#         S_galaxy = np.sum(np.absolute(diff))/(2*Nnorm)
-        
-#         if self.noise is not None:
-            
-#             noise_original = self.noise * self.segmentation
-#             noise_smoothed = self.smoothed_noise * self.segmentation
-            
-#             noise_original[(noise_original < 0)] = 0
-#             noise_smoothed[(noise_smoothed < 0)] = 0
-            
-#             diff_n = (noise_original - noise_smoothed)[mask]/original_image[mask]
-#             S_noise = np.sum(np.absolute(diff_n))/(2*Nnorm)
-            
-#             return(S_galaxy - S_noise, S_galaxy, S_noise)
-        
-#         else:
-#             return(S_galaxy)
-   
-#     def plot_smoothness_comparison(self):
-#         original_image = self.image * self.segmentation
-#         smoothed_image = self.smoothed_image * self.segmentation
-#         m,s = np.median(original_image[self.segmentation != 0]), np.std(original_image[self.segmentation != 0])
-            
-#         if self.noise is None:
-            
-#             plt.figure(figsize = (18,6), dpi = 200)
-            
-#             plt.subplot(131)
-#             plt.title("Original image", fontsize = 20)
-#             plt.imshow(original_image, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = m-s, vmax = m+2*s)
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-#             plt.subplot(132)
-#             plt.title("Smoothed image", fontsize = 20)
-#             plt.imshow(smoothed_image, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = m-s, vmax = m+2*s)
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-#             plt.subplot(133)
-#             plt.title("Original - Smoothed", fontsize = 20)
-#             plt.imshow(original_image - smoothed_image, cmap = "gray_r", interpolation='nearest', origin = 'lower')
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-                        
-            
-#         else:
-#             plt.figure(figsize = (18,12), dpi = 200)
-            
-#             plt.subplot(231)
-#             plt.title("Original image", fontsize = 20)
-#             plt.imshow(original_image, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = m-s, vmax = m+2*s)
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-#             plt.subplot(232)
-#             plt.title("Smoothed image", fontsize = 20)
-#             plt.imshow(smoothed_image, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = m-s, vmax = m+2*s)      
-#             plt.colorbar()
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.subplot(233)
-#             plt.title("Original - Smoothed", fontsize = 20)
-#             plt.imshow(original_image - smoothed_image, cmap = "gray_r", interpolation='nearest', origin = 'lower')
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-#             noise_original = self.noise * self.segmentation
-#             noise_smoothed = self.smoothed_noise * self.segmentation
-            
-#             m,s = np.median(noise_original[self.segmentation != 0]), np.std(noise_original[self.segmentation != 0])
-        
-#             plt.subplot(234)
-#             plt.title("Original noise", fontsize = 20)
-#             plt.imshow(noise_original, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = 0, vmax = m+2*s)
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-#             plt.subplot(235)
-#             plt.title("Smoothed noise", fontsize = 20)
-#             plt.imshow(noise_smoothed, cmap = "gray_r", interpolation='nearest', origin = 'lower', vmin = 0, vmax = m+2*s)
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-            
-#             plt.subplot(236)
-#             plt.title("Noise - Smoothed", fontsize = 20)
-#             plt.imshow(noise_original - noise_smoothed, cmap = "gray_r", interpolation='nearest', origin = 'lower')
-#             plt.xlabel("x", fontsize = 18)
-#             plt.ylabel("y", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-#             plt.colorbar()
-            
-                
-#     def plot_smoothness_scatter(self):
-        
-#         original_image = self.image * self.segmentation
-#         smoothed_image = self.smoothed_image * self.segmentation
-        
-#         original_image[(original_image < 0)] = 0
-#         smoothed_image[(smoothed_image < 0)] = 0
-
-#         v1 = original_image[(original_image!=0) & (smoothed_image!=0)].flatten()
-#         v2 = smoothed_image[(original_image!=0) & (smoothed_image!=0)].flatten()        
-        
-#         if self.noise is None:
-#             plt.figure(figsize = (6,6), dpi = 200)
-#             plt.title("Original scatter", fontsize = 20)
-#             plt.scatter(v1, v2, s = 6, marker = 'o', ec = 'b', fc = 'white', label = "All pixels")
-#             plt.xlabel("Original pixel", fontsize = 18)
-#             plt.ylabel("Smoothed pixel", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsiz = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-                
-#         else:
-#             noise_original = self.noise * self.segmentation
-#             noise_smoothed = self.smoothed_noise * self.segmentation
-            
-#             noise_original[(noise_original < 0)] = 0
-#             noise_smoothed[(noise_smoothed < 0)] = 0
-
-#             v3 = noise_original[(noise_original!=0) & (noise_smoothed!=0)].flatten()
-#             v4 = noise_smoothed[(noise_original!=0) & (noise_smoothed!=0)].flatten()
-         
-#             plt.figure(figsize = (12,6), dpi = 200)
-            
-#             plt.subplot(121)
-#             plt.title("Image scatter", fontsize = 20)
-#             plt.scatter(v1, v2, s = 12, marker = 'o', ec = 'b', fc = 'white', label = "All pixels")
-#             plt.xlabel("Original pixel", fontsize = 18)
-#             plt.ylabel("Smoothed pixel", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)       
-            
-#             plt.subplot(122)
-#             plt.title("Noise scatter", fontsize = 20)
-#             plt.scatter(v3, v4, s = 12, marker = 'o', ec = 'b', fc = 'white', label = "All pixels")
-#             plt.xlabel("Original pixel", fontsize = 18)
-#             plt.ylabel("Smoothed pixel", fontsize = 18)
-#             plt.xticks(fontsize = 16)
-#             plt.yticks(fontsize = 16)
-#             plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)       
-            
-                
-                
-class Spirality:
-    def __init__(self, image, a, b, theta = 0, segmentation=None):
-        self.image = image
-        self.segmentation = segmentation if segmentation is not None else np.ones_like(image, dtype=int)
-        if self.segmentation.shape != self.image.shape:
-            raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
-        
-        # Apply segmentation to the image
-        self.image = np.where(self.segmentation == 1, self.image, np.nan)
-        self.a = a
-        self.b = b
-        self.theta = theta
-    def elliptical_coordinates(self, x0, y0):
-        """
-        Compute the elliptical radius and angle for each pixel.
-        """
-        y, x = np.indices(self.image.shape)
-        x_shifted = x - x0
-        y_shifted = y - y0
-
-        # Rotate coordinates
-        x_rot = x_shifted * np.cos(self.theta) + y_shifted * np.sin(self.theta)
-        y_rot = -x_shifted * np.sin(self.theta) + y_shifted * np.cos(self.theta)
-
-        # Elliptical radius
-        r_ellipse = np.sqrt((x_rot / self.a) ** 2 + (y_rot / self.b) ** 2)
-
-        # Angular coordinate
-        angle = np.arctan2(y_rot, x_rot)
-
-        return r_ellipse, angle
-        
-    def polar_transform(self, x0=None, y0=None, r_max=30, pixel_scale=1, r_bins=20, theta_bins=360):
-        """
-        Transform the galaxy image into polar coordinates.
-
-        Parameters:
-        ----------
-        x0, y0 : float, optional
-            Center coordinates of the galaxy. If None, assumes the center of the image.
-        r_max : float, optional
-            Maximum radial distance for the transformation.
-        pixel_scale : float, optional
-            Pixel scale of the image.
-        r_bins : int, optional
-            Number of radial bins.
-        theta_bins : int, optional
-            Number of angular bins.
-
-        Returns:
-        -------
-        polar_image : ndarray
-            Polar-transformed image.
-        r_bins : ndarray
-            Radial bin edges.
-        theta_bins : ndarray
-            Angular bin edges.
-        """
-        """
-        Transform the image into elliptical polar coordinates.
-        """
-        r_ellipse, angle = self.elliptical_coordinates(x0, y0)
-
-        # Create bins
-        r_edges = np.linspace(0, r_max, r_bins)  # Normalized elliptical radius
-        theta_edges = np.linspace(-np.pi, np.pi, theta_bins + 1)
-
-        # Polar-transformed image
-        polar_image = np.zeros((r_bins - 1, theta_bins))
-
-        for i in range(r_bins - 1):
-            for j in range(theta_bins):
-                mask = (
-                    (r_ellipse >= r_edges[i]) & (r_ellipse < r_edges[i + 1]) &
-                    (angle >= theta_edges[j]) & (angle < theta_edges[j + 1])
-                )
-                polar_image[i, j] = np.mean(self.image[mask]) if np.any(mask) else 0
-
-        return polar_image
-        
-    def calculate_fourier_modes(self, polar_image, max_mode):
-        r_dim, theta_dim = polar_image.shape
-        fourier_modes = {}
-
-        for m in range(max_mode + 1):
-            cosine_term = np.cos(m * np.linspace(0, 2 * np.pi, theta_dim))
-            sine_term = np.sin(m * np.linspace(0, 2 * np.pi, theta_dim))
-
-            C_m = np.nansum(polar_image * cosine_term, axis=1)
-            S_m = np.nansum(polar_image * sine_term, axis=1)
-
-            A_m = np.sqrt(C_m**2 + S_m**2)
-            fourier_modes[m] = A_m
-
-        return fourier_modes
-
-    def calculate_total_power(self, fourier_modes, normalize_by="intensity"):
-        """
-        Calculate the total power across all modes with optional normalization.
-
-        Parameters:
-        ----------
-        fourier_modes : dict
-            Dictionary of Fourier mode amplitudes.
-        normalize_by : str, optional
-            Normalization method. Options are 'intensity', 'area', 'max_intensity', or 'none'.
-
-        Returns:
-        -------
-        normalized_total_power : float
-            Normalized total power across all modes.
-        mode_powers : dict
-            Power contribution of each mode.
-        """
-        total_power = 0
-        mode_powers = {}
-
-        for m, amplitude in fourier_modes.items():
-            mode_power = np.trapz(amplitude)  # Integrate amplitude over radius
-            mode_powers[m] = mode_power
-            total_power += mode_power
-
-        # Normalization
-        if normalize_by == "intensity":
-            total_intensity = np.nansum(self.image * self.segmentation)
-            normalized_total_power = total_power / total_intensity if total_intensity > 0 else total_power
-        elif normalize_by == "area":
-            segmentation_area = np.nansum(self.segmentation)
-            normalized_total_power = total_power / segmentation_area if segmentation_area > 0 else total_power
-        elif normalize_by == "max_intensity":
-            max_intensity = np.nanmax(self.image * self.segmentation)
-            normalized_total_power = total_power / max_intensity if max_intensity > 0 else total_power
-        elif normalize_by == "none":
-            normalized_total_power = total_power
-        else:
-            raise ValueError("Invalid normalization method. Choose from 'intensity', 'area', 'max_intensity', or 'none'.")
-
-        return normalized_total_power, total_power, mode_powers
-    
-    def analyze_spiral_structure(self, x0=None, y0=None, r_max=30, r_bins=20, theta_bins=360, max_mode=5, normalization = "intensity"):
-        """
-        Perform the full analysis to calculate Fourier modes and total power.
-
-        Parameters:
-        ----------
-        x0, y0 : float, optional
-            Center coordinates of the galaxy. If None, assumes the center of the image.
-        r_max : float, optional
-            Maximum radial distance for the transformation.
-        r_bins : int, optional
-            Number of radial bins.
-        theta_bins : int, optional
-            Number of angular bins.
-        max_mode : int, optional
-            Maximum Fourier mode to analyze.
-
-        Returns:
-        -------
-        analysis_results : dict
-            Dictionary containing Fourier modes, total power, and mode contributions.
-        """
-        # Perform polar transformation
-        polar_image = self.polar_transform(
-            x0=x0, y0=y0, r_max=r_max, r_bins=r_bins, theta_bins=theta_bins
-        )
-        
-        # Calculate Fourier modes
-        fourier_modes = self.calculate_fourier_modes(polar_image, max_mode)
-        
-        # Calculate total power across all modes
-        normalized_power, total_power, mode_powers = self.calculate_total_power(fourier_modes, normalize_by = normalization)
-        
-        mode_contributions = {
-            m: power / total_power for m, power in mode_powers.items()
-        }
-        return normalized_power, mode_contributions
-             
-    
-    
-    def plot_polar_transform(self, x0=None, y0=None, r_max=30, r_bins=20, theta_bins=360, title_original="Original Image", title_polar="Polar Image", **kwargs):
-        polar_image = self.polar_transform(x0, y0, r_max, r_bins=r_bins, theta_bins=theta_bins)
-        
-        fig, axes = plt.subplots(1, 2, figsize=(12, 6), dpi = 200)
-        
-        # Plot original image
-        m, s = np.nanmedian(self.image), np.nanstd(self.image)
-        im1 = axes[0].imshow(self.image, origin='lower', cmap=kwargs.get('cmap', 'gray_r'),
-                            vmin = m-s, vmax = m+(2*s))
-        axes[0].set_title(title_original, fontsize=kwargs.get('fontsize', 20))
-        axes[0].set_xlabel("X (pixels)", fontsize=kwargs.get('fontsize', 18))
-        axes[0].set_ylabel("Y (pixels)", fontsize=kwargs.get('fontsize', 18))
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        plt.colorbar(im1, ax=axes[0])
-        
-        # Plot polar-transformed image
-        m, s = np.nanmedian(polar_image), np.nanstd(polar_image)
-        im2 = axes[1].imshow(polar_image, origin='lower', aspect=theta_bins/r_bins, cmap=kwargs.get('cmap', 'gray_r'), vmin = m-s, vmax = m+(2*s))
-        axes[1].set_title(title_polar, fontsize=kwargs.get('fontsize', 14))
-        axes[1].set_xlabel("Theta (bins)", fontsize=kwargs.get('fontsize', 12))
-        axes[1].set_ylabel("R (bins)", fontsize=kwargs.get('fontsize', 12))
-        plt.colorbar(im2, ax=axes[1])
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        plt.tight_layout()
         
 
-    def plot_fourier_modes(self, polar_image, max_mode=5, title="Fourier Mode Representation", **kwargs):
-        fourier_modes = self.calculate_fourier_modes(polar_image, max_mode)
+"""
+GPA
+===
 
-        fig, ax = plt.subplots(figsize=(8, 6), dpi = 200)
+Class to compute the G2 morphological index based on Gradient Pattern Analysis (GPA),
+as defined in Kolesnikov et al. (2024).
 
-        for m, amplitude in fourier_modes.items():
-            ax.plot(amplitude, label=f"Mode {m}", linewidth=kwargs.get('linewidth', 2))
-        
-        ax.set_title(title, fontsize=kwargs.get('fontsize', 14))
-        ax.set_xlabel("Radial Bin Index", fontsize=kwargs.get('fontsize', 12))
-        ax.set_ylabel("Amplitude", fontsize=kwargs.get('fontsize', 12))
-        ax.legend(fontsize=kwargs.get('fontsize', 10))
-        ax.grid(alpha=0.3)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        plt.tight_layout()
-        
+Attributes
+----------
+image : ndarray
+    Input 2D galaxy image.
+segmentation : ndarray
+    Binary segmentation mask of the same shape as the image.
 
-class GPA2:
-    def __init__(self, image, segmentation=None):
-        self.image = image
-        self.segmentation = segmentation if segmentation is not None else np.ones_like(image, dtype=int)
-        if self.segmentation.shape != self.image.shape:
-            raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
-
-    def calculate_g2(self, mtol=0.0, ptol=0.0, sigma_clip=False, center=None):
-        grad_y, grad_x = np.gradient(self.image)
-        grad_x = grad_x * self.segmentation
-        grad_y = grad_y * self.segmentation
-
-        magnitude = np.sqrt(grad_x**2 + grad_y**2)
-        phase = (np.degrees(np.arctan2(grad_y, grad_x)) + 360) % 360
-
-        outlier_mask = np.zeros_like(magnitude, dtype=bool)
-        if sigma_clip:
-            mean = np.nanmean(magnitude)
-            std = np.nanstd(magnitude)
-            outlier_mask = (magnitude > mean + 3 * std) #| (magnitude < mean - 3 * std)
-            magnitude[outlier_mask] = np.nan
-            phase[outlier_mask] = np.nan
-            grad_x[outlier_mask] = np.nan
-            grad_y[outlier_mask] = np.nan
-
-        mag_rot = np.rot90(magnitude, 2)
-        phase_rot = np.rot90(phase, 2)
-
-        mag_max = np.maximum(magnitude, mag_rot)
-        with np.errstate(invalid='ignore', divide='ignore'):
-            delta_mag = np.abs(magnitude - mag_rot) / mag_max * 100
-
-        delta_phase = np.abs(phase - phase_rot)
-        delta_phase = np.minimum(delta_phase, 360 - delta_phase)
-
-        asymmetric = (delta_mag > mtol) | (delta_phase > ptol)
-        symmetric = ~asymmetric
-
-        if center is None:
-            cx, cy = self.image.shape[1] // 2, self.image.shape[0] // 2
-        else:
-            cx, cy = center
-
-        if 0 <= cx < self.image.shape[1] and 0 <= cy < self.image.shape[0]:
-            symmetric[cx, cy] = True
-            asymmetric[cx, cy] = False
-
-        grad_x_a = grad_x.copy()
-        grad_y_a = grad_y.copy()
-        grad_x_a[symmetric] = np.nan
-        grad_y_a[symmetric] = np.nan
-
-        sum_gx = np.nansum(grad_x_a)
-        sum_gy = np.nansum(grad_y_a)
-        total_mag = np.nansum(magnitude)
-        confluence = np.sqrt(sum_gx**2 + sum_gy**2) / total_mag if total_mag > 0 else 0
-
-        valid_mask = (self.segmentation == 1) & (~np.isnan(magnitude))
-        N = np.sum(valid_mask)
-        N_a = np.sum(asymmetric & valid_mask)
-
-        try:
-            g2 = (N_a / N) * (1.0 - confluence)
-        except ZeroDivisionError:
-            g2 = np.nan
-
-        self.grad_x = grad_x
-        self.grad_y = grad_y
-        self.magnitude = magnitude
-        self.phase = phase
-        self.asymmetric = asymmetric
-        self.outlier_mask = outlier_mask
-
-        return g2
-
-    def get_g2(self, mtol=0.0, ptol=0.0, sigma_clip=False, max_iter=50):
-        def g2_at_center(center):
-            return self.calculate_g2(mtol=mtol, ptol=ptol, sigma_clip=sigma_clip, center=center)
-
-        yc, xc = np.array(self.image.shape) // 2
-        center = (xc, yc)
-
-        for niter in range(max_iter):
-            x, y = center
-            candidates = [(x + dx, y + dy) for dy in [-1, 0, 1] for dx in [-1, 0, 1]]
-            candidates = [(cx, cy) for (cx, cy) in candidates if 0 <= cx < self.image.shape[1] and 0 <= cy < self.image.shape[0]]
-            values = [g2_at_center(c) for c in candidates]
-            best_idx = np.nanargmin(values)
-            new_center = candidates[best_idx]
-
-            if new_center == center:
-                break
-            center = new_center
-
-        final_g2 = g2_at_center(center)
-        return final_g2, center, niter
-
-    def plot_vector_field(self):
-        Y, X = np.mgrid[0:self.image.shape[0], 0:self.image.shape[1]]
-        max_magnitude = np.nanmax(self.magnitude[~self.outlier_mask])
-
-        norm_grad_x = np.where(self.segmentation, self.grad_x / max_magnitude, np.nan)
-        norm_grad_y = np.where(self.segmentation, self.grad_y / max_magnitude, np.nan)
-
-        plt.figure(figsize=(10, 5))
-
-        plt.subplot(1, 2, 1)
-        plt.quiver(X, Y, norm_grad_x, norm_grad_y, scale=50, color='black')
-        plt.title('Full Gradient Field')
-        if np.any(self.outlier_mask):
-            y_out, x_out = np.where(self.outlier_mask)
-            plt.scatter(x_out, y_out, color='red', s=5, label='Clipped')
-            plt.legend()
-        plt.text(2, 2, f"Max |∇I| = {max_magnitude:.2f}", color='blue')
-
-        if hasattr(self, 'center_used'):
-            plt.scatter(self.center_used[0], self.center_used[1], color='lime', marker='x', s=60, label='Center Used')
-            plt.legend()
-
-        asym_x = np.where(self.asymmetric & self.segmentation.astype(bool), self.grad_x, np.nan) / max_magnitude
-        asym_y = np.where(self.asymmetric & self.segmentation.astype(bool), self.grad_y, np.nan) / max_magnitude
-        
-        plt.subplot(1, 2, 2)
-        plt.quiver(X, Y, asym_x, asym_y, scale=50, color='darkorange')
-        plt.title('Asymmetric Vectors Only')
-
-        if hasattr(self, 'center_used'):
-            plt.scatter(self.center_used[0], self.center_used[1], color='lime', marker='x', s=60)
-
-        plt.tight_layout()
-        plt.show()
-
-    
-    def plot_histograms(self):
-        norm_magnitude = self.magnitude / np.nanmax(self.magnitude[~self.outlier_mask])
-
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        axs[0].hist(norm_magnitude[~np.isnan(norm_magnitude)].ravel(), bins=np.arange(0,1,0.05), color='blue', histtype = 'step', lw = 2, density = True)
-        axs[0].set_title("Normalized Gradient Magnitude Distribution")
-        axs[0].set_xlabel("|∇I| / max")
-
-        axs[1].hist(self.phase[~np.isnan(self.phase)].ravel(), bins=np.arange(0,360,10), color='blue', histtype = 'step', density = True, lw = 2)
-        axs[1].set_title("Gradient Phase Distribution")
-        axs[1].set_xlabel("Phase (degrees)")
-
-        plt.tight_layout()
-        plt.show()
-
-
+Methods
+-------
+gradient_fields :
+    Compute gradient vectors and phase angles.
+plot_gradient_field :
+    Visualize original and asymmetric gradient fields.
+plot_hists :
+    Plot histograms of gradient modules and phases.
+get_g2 :
+    Compute the G2 morphological index (Kolesnikov et al. 2024).
+"""
 class GPA:
     def __init__(self, image, segmentation=None):
+        """
+        Initialize GPA object with galaxy image and optional segmentation mask.
+
+        Parameters
+        ----------
+        image : ndarray
+            Input galaxy image.
+        segmentation : ndarray, optional
+            Binary mask (default is all ones).
+        """
         self.image = image
         self.segmentation = segmentation if segmentation is not None else np.ones_like(image, dtype=int)
         if self.segmentation.shape != self.image.shape:
@@ -1914,7 +1599,28 @@ class GPA:
         
         
     def gradient_fields(self, image, segmentation):
-        
+        """
+        Compute gradient vectors and phase angles for the masked image.
+
+        Parameters
+        ----------
+        image : ndarray
+            Galaxy image.
+        segmentation : ndarray
+            Binary segmentation mask.
+
+        Returns
+        -------
+        grad_x : ndarray
+            Gradient in x direction.
+        grad_y : ndarray
+            Gradient in y direction.
+        modules : ndarray
+            Magnitude of gradient vectors.
+        phase : ndarray
+            Phase angle of gradient vectors (radians).
+        """
+
         image_gpa = image * segmentation
         image_gpa[segmentation == 0] = np.nan
 
@@ -1930,8 +1636,19 @@ class GPA:
     
     
     def plot_gradient_field(self, mtol, ptol):
+        """
+        Visualize the original and asymmetric gradient fields.
+
+        Parameters
+        ----------
+        mtol : float
+            Tolerance threshold for gradient magnitude.
+        ptol : float
+            Tolerance threshold for phase angle.
+        """
         
-        grad_x, grad_y, gradient_a_x, gradient_a_y, _, _, _, _, _, _, _, _ = self.get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = mtol, ptol = ptol, remove_outliers = '')
+        
+        grad_x, grad_y, gradient_a_x, gradient_a_y, _, _, _, _, _, _, _, _ = self._get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = mtol, ptol = ptol, remove_outliers = '')
         
         plt.figure(figsize = (12,6), dpi = 200)
 
@@ -1957,7 +1674,11 @@ class GPA:
     
     
     def plot_hists(self):
-        _, _, _, _, _, _, _, modules_normalized, _, phases, _, _ = self.get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = 0, ptol = 0, remove_outliers = '')
+        """
+        Plot histograms of normalized gradient magnitudes and phase angles.
+        """
+
+        _, _, _, _, _, _, _, modules_normalized, _, phases, _, _ = self._get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = 0, ptol = 0, remove_outliers = '')
         
         
         plt.figure(figsize = (12,6), dpi = 200)
@@ -1983,7 +1704,7 @@ class GPA:
         
   ################################## KOLESNIKOV IMPLEMENTATION ################################
 
-    def compute_gradient_phases(self, dx, dy):
+    def _compute_gradient_phases(self, dx, dy):
         # Compute the ratio
         ratio = dy / (dx + np.finfo(float).eps)
 
@@ -2001,13 +1722,13 @@ class GPA:
 
         return direction
 
-    def normalize_modules(self, modules):
+    def _normalize_modules(self, modules):
         max_value = np.nanmax(modules)
         normal_array = modules/max_value
 
         return normal_array
 
-    def fix_opposite_quadrants(self, phases):
+    def _fix_opposite_quadrants(self, phases):
         height, width = phases.shape
         center_x, center_y = int(width/2), int(height/2)
 
@@ -2025,7 +1746,7 @@ class GPA:
 
         return np.abs(phases)
 
-    def add_disturbance(self, fixed_phases, disturbance):
+    def _add_disturbance(self, fixed_phases, disturbance):
         height, width = fixed_phases.shape
         center_x, center_y = int(width/2), int(height/2)
 
@@ -2040,7 +1761,7 @@ class GPA:
         return fixed_phases
 
 
-    def get_contour_count(self, image):
+    def _get_contour_count(self, image):
         # function that counts the contour pixels pixels
         filter = np.array([[0, 1, 0],
                             [1, 0, 1],
@@ -2055,7 +1776,7 @@ class GPA:
         return contourMask.sum()
 
 
-    def is_square_float32(self, arr):
+    def _is_square_float32(self, arr):
         """
         Check if a numpy array is a square matrix of type float32.
 
@@ -2084,7 +1805,7 @@ class GPA:
 
         return True
 
-    def set_values_above_3sigma_to_nan_new(self, field, arr):
+    def _set_values_above_3sigma_to_nan_new(self, field, arr):
         """
         Set all values in the 2D numpy array `arr` that are more than 
         3 standard deviations from the mean to NaN.
@@ -2095,7 +1816,7 @@ class GPA:
 
         return field
 
-    def set_values_above_3sigma_to_nan_old(self, arr):
+    def _set_values_above_3sigma_to_nan_old(self, arr):
         """
         Set all values in the 2D numpy array `arr` that are more than 
         3 standard deviations from the mean to NaN.
@@ -2106,7 +1827,7 @@ class GPA:
 
         return arr
 
-    def prepare_g2_input(self, full_clean_image, full_mask, remove_outliers):
+    def _prepare_g2_input(self, full_clean_image, full_mask, remove_outliers):
         # image
         if not isinstance(full_clean_image, np.ndarray):
             raise ValueError('The input must be a numpy array.')
@@ -2120,7 +1841,7 @@ class GPA:
 
         if not isinstance(full_mask, np.ndarray):
             if full_mask == 'None':
-                contour_count = self.get_contour_count(full_clean_image)
+                contour_count = self._get_contour_count(full_clean_image)
                 full_clean_image[full_clean_image==0] = np.nan
                 full_mask = np.ones(full_clean_image.shape)
             elif full_mask == 'no_contour':
@@ -2150,23 +1871,23 @@ class GPA:
         gradient_y_segmented = gradient_y * full_mask
 
         if remove_outliers == 'new':
-            gradient_x_segmented = self.set_values_above_3sigma_to_nan_new(gradient_x_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
-            gradient_y_segmented = self.set_values_above_3sigma_to_nan_new(gradient_y_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
+            gradient_x_segmented = self._set_values_above_3sigma_to_nan_new(gradient_x_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
+            gradient_y_segmented = self._set_values_above_3sigma_to_nan_new(gradient_y_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
         elif remove_outliers =='old':
-            gradient_x_segmented = self.set_values_above_3sigma_to_nan_old(gradient_x_segmented)
-            gradient_y_segmented = self.set_values_above_3sigma_to_nan_old(gradient_y_segmented)
+            gradient_x_segmented = self._set_values_above_3sigma_to_nan_old(gradient_x_segmented)
+            gradient_y_segmented = self._set_values_above_3sigma_to_nan_old(gradient_y_segmented)
 
         modules_segmented = np.array([[sqrt(pow(gradient_y_segmented[j, i],2.0)+pow(gradient_x_segmented[j, i],2.0)) for i in range(width) ] for j in range(height)], dtype=np.float32)
 
         phases_segmented = np.degrees(np.arctan2(gradient_x_segmented, gradient_y_segmented))
-        phases_segmented = self.compute_gradient_phases(gradient_x_segmented, gradient_y_segmented)
+        phases_segmented = self._compute_gradient_phases(gradient_x_segmented, gradient_y_segmented)
 
         gradient_x_segmented[np.isnan(modules_segmented)] = np.nan
         gradient_y_segmented[np.isnan(modules_segmented)] = np.nan
 
         return gradient_x_segmented, gradient_y_segmented, modules_segmented, phases_segmented, contour_count
 
-    def fix_corners(self, modules_substracted, phases_substracted):
+    def _fix_corners(self, modules_substracted, phases_substracted):
         height, width = modules_substracted.shape
         height -= 1
         width -= 1
@@ -2181,21 +1902,21 @@ class GPA:
         phases_substracted[width,0] = np.nan
         phases_substracted[0,height] = np.nan
 
-    def get_ass_field(self, matrix, mask, mtol, ptol, remove_outliers):
+    def _get_ass_field(self, matrix, mask, mtol, ptol, remove_outliers):
         height, width = matrix.shape
         center_x, center_y = floor(width/2), floor(height/2)
 
-        gradient_x, gradient_y, modules, phases, contour_count = self.prepare_g2_input(matrix, mask, remove_outliers)
+        gradient_x, gradient_y, modules, phases, contour_count = self._prepare_g2_input(matrix, mask, remove_outliers)
 
-        modules_normalized = self.normalize_modules(modules)
+        modules_normalized = self._normalize_modules(modules)
 
         phases_rot = np.rot90(phases, 2)
         phases_substracted = (abs(phases - phases_rot))
-        phases_substracted_final = self.fix_opposite_quadrants(phases_substracted)
+        phases_substracted_final = self._fix_opposite_quadrants(phases_substracted)
 
         modules_substracted = (abs(modules_normalized - np.rot90(modules_normalized, 2)))
 
-        self.fix_corners(modules_substracted, phases_substracted_final)
+        self._fix_corners(modules_substracted, phases_substracted_final)
 
         # rounding to avoid super small values
         modules_substracted = np.round(modules_substracted, 6)
@@ -2218,7 +1939,7 @@ class GPA:
 
         return gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, a_mask, modules_normalized, modules, phases, no_pair_count, contour_count
 
-    def get_confluence(self, gradient_a_x, gradient_a_y, modules, no_pair_count, contour_count):
+    def _get_confluence(self, gradient_a_x, gradient_a_y, modules, no_pair_count, contour_count):
         sum_x_vectors = np.nansum(gradient_a_x)
         sum_y_vectors = np.nansum(gradient_a_y)
 
@@ -2235,9 +1956,27 @@ class GPA:
         return confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors
 
     def get_g2(self, mtol=0, ptol=0, remove_outliers=''):
-        gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, a_mask, modules_normalized, modules, phases, no_pair_count, contour_count = self.get_ass_field(self.image, self.segmentation.astype(np.float32), mtol, ptol, remove_outliers)
+        """
+        Compute the G2 morphological index.
 
-        confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors = self.get_confluence(gradient_a_x, gradient_a_y, modules, no_pair_count, contour_count)
+        Parameters
+        ----------
+        mtol : float
+            Magnitude threshold for symmetric pattern filtering.
+        ptol : float
+            Phase threshold (degrees) for pattern symmetry.
+        remove_outliers : str
+            Method to remove outliers ('new', 'old', or '').
+
+        Returns
+        -------
+        g2 : float
+            The G2 morphological index.
+        """
+ 
+        gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, a_mask, modules_normalized, modules, phases, no_pair_count, contour_count = self._get_ass_field(self.image, self.segmentation.astype(np.float32), mtol, ptol, remove_outliers)
+
+        confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors = self._get_confluence(gradient_a_x, gradient_a_y, modules, no_pair_count, contour_count)
 
         try:
             g2 = (float(asymmetric_vectors) / float(total_valid_vectors)) * (1.0 - confluence)
@@ -2248,6 +1987,7 @@ class GPA:
         #gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, a_mask, modules_normalized, modules, phases, no_pair_count, confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors
         
         return g2 
+    
     
     
 

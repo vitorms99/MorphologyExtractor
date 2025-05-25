@@ -1,6 +1,31 @@
 import numpy as np
 import sep
 from astropy.io import fits
+
+"""
+BackgroundEstimator
+===================
+
+Class to estimate the background level of astronomical images using different techniques.
+
+Attributes
+----------
+image : ndarray
+    The input 2D image.
+galaxy_name : str
+    Identifier for the galaxy, used for file loading.
+
+Methods
+-------
+flat_background :
+    Apply a constant background value across the image.
+frame_background :
+    Estimate background using edge pixels.
+sep_background :
+    Use SEP (Source Extractor in Python) for 2D background modeling.
+load_background :
+    Load a background FITS image from disk.
+"""
 class BackgroundEstimator:
     """
     Class to estimate the background of an astronomical image.
@@ -22,8 +47,25 @@ class BackgroundEstimator:
         self.galaxy_name = galaxy_name
 
     def flat_background(self, value, std):
-        """
-        Estimate a flat background using a constant value.
+        """Apply a flat background model with constant value.
+
+        Parameters
+        ----------
+        value : float
+            Background value.
+        std : float
+            Background standard deviation.
+
+        Returns
+        -------
+        value : float
+            Background median value.
+        std : float
+            Background standard deviation.
+        bkg_image : ndarray
+            Flat background image.
+        galaxy_nobkg : ndarray
+            Background-subtracted image.
         """
         bkg_image = np.full(self.image.shape, value, dtype=np.float32)
         galaxy_nobkg = self.image - bkg_image
@@ -31,8 +73,27 @@ class BackgroundEstimator:
         return value, std, bkg_image, galaxy_nobkg
 
     def frame_background(self, image_fraction = 0.1, sigma_clipping = True, clipping_threshold = 3):
-        """
-        Estimate the background from the edges of the image.
+        """Estimate background using image borders and optional sigma clipping.
+
+        Parameters
+        ----------
+        image_fraction : float
+            Fraction of image edges to consider.
+        sigma_clipping : bool
+            Apply iterative sigma clipping to remove outliers.
+        clipping_threshold : float
+            Clipping threshold in standard deviations.
+
+        Returns
+        -------
+        bkg_median : float
+            Estimated background median.
+        bkg_std : float
+            Estimated background standard deviation.
+        bkg_image : ndarray
+            Simulated noise background image.
+        galaxy_nobkg : ndarray
+            Background-subtracted image.
         """
         
         h, w = self.image.shape
@@ -61,8 +122,27 @@ class BackgroundEstimator:
         return bkg_median, bkg_std, bkg_image, galaxy_nobkg
 
     def sep_background(self, bw = 32, bh = 32, fw = 3, fh = 3, **kwargs):
-        """
-        Estimate the background using SEP.
+        """Estimate background using SEP's global 2D model.
+
+        Parameters
+        ----------
+        bw, bh : int
+            Background mesh block sizes.
+        fw, fh : int
+            Filter window sizes.
+        **kwargs : dict
+            Additional arguments passed to `sep.Background`.
+
+        Returns
+        -------
+        globalback : float
+            Global background level.
+        globalrms : float
+            Global background RMS.
+        bkg_image : ndarray
+            2D background model.
+        galaxy_nobkg : ndarray
+            Background-subtracted image.
         """
         bkg = sep.Background(self.image, bw=bw, bh=bh, fw=fw, fh=fh, **kwargs)
 
@@ -72,6 +152,40 @@ class BackgroundEstimator:
         return bkg.globalback, bkg.globalrms, bkg_image, galaxy_nobkg
 
     def load_background(self, bkg_file = None, bkg_image_path = "./", bkg_image_prefix = "", bkg_image_sufix = "", bkg_image_HDU = 0):
+        """Load a pre-computed background FITS file.
+
+        Parameters
+        ----------
+        bkg_file : str or None
+            Specific FITS filename or inferred from `galaxy_name`.
+        bkg_image_path : str
+            Directory containing the file.
+        bkg_image_prefix : str
+            Prefix for the file.
+        bkg_image_sufix : str
+            Suffix for the file.
+        bkg_image_HDU : int
+            HDU index from which to read the image.
+
+        Returns
+        -------
+        bkg_median : float
+            Background median value.
+        bkg_std : float
+            Background standard deviation.
+        bkg_image : ndarray
+            Background image array.
+        galaxy_nobkg : ndarray
+            Background-subtracted image.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified file does not exist.
+        ValueError
+            If image dimensions do not match.
+        """
+
         try:
 
             if bkg_file is None:

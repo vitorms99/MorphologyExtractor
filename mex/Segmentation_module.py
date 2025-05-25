@@ -1,28 +1,70 @@
 import numpy as np
 from astropy.convolution import Box2DKernel, convolve
 import sep
-from mex.Utils_module import centralize_on_main_obj
 
+"""
+SegmentImage
+============
+
+Class for generating refined segmentation masks for galaxies using
+elliptical or intensity-based criteria.
+
+Attributes
+----------
+image : ndarray
+    Input 2D image.
+first_segmentation : ndarray
+    Initial segmentation map.
+rp : float
+    Petrosian radius.
+x, y : float
+    Galaxy center coordinates.
+a, b : float
+    Semi-major and semi-minor axes.
+theta : float
+    Orientation angle in radians.
+main_index : int
+    Index of the main object (based on image center).
+
+Methods
+-------
+get_original :
+    Extract the mask of the main object from the original segmentation.
+limit_to_ellipse :
+    Apply an elliptical constraint to the segmentation.
+limit_to_intensity :
+    Apply a surface brightness threshold constraint.
+average_intensity :
+    Compute the average surface brightness in an annulus.
+calculate_flux_and_area :
+    Compute total flux and geometric area at a given elliptical scale.
+"""
 class SegmentImage:
     """
     Class for segmenting an astronomical image based on various criteria.
     """
-    def __init__(self, image, segmentation, rp, x, y, a, b, theta):
-        """
-        Initialize the segmentation object.
+    def __init__(self, image, segmentation, rp, x, y, a = 1, b = 1, theta = 0):
+        """Initialize the segmentation refinement object.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         image : ndarray
-            The input image.
+            Input image.
         segmentation : ndarray
-            Initial segmentation map.
-        config : dict
-            Configuration parameters.
-        objects : pandas.DataFrame
-            Object properties.
+            Initial segmentation mask.
         rp : float
             Petrosian radius.
+        x, y : float
+            Galaxy center coordinates.
+        a, b : float
+            Semi-major and semi-minor axes.
+        theta : float
+            Orientation angle (radians).
+
+        Raises
+        ------
+        ValueError
+            If the central pixel does not correspond to a valid object.
         """
         self.first_segmentation = segmentation
         self.image = image
@@ -41,26 +83,31 @@ class SegmentImage:
         if self.main_index == 0:
             raise ValueError("No galaxy detected at the center of the segmentation map.")
 
-    def _get_original(self):
+    def get_original(self):
         """
-        Extract the segmentation mask for the main object.
+        Return a binary mask of the main object from the original segmentation.
 
-        Returns:
-        --------
+        Returns
+        -------
         ndarray
-            Segmentation mask for the main object.
+            Binary mask (1 = main object, 0 = other).
         """
         segmented_image = (self.first_segmentation == self.main_index).astype(int)
         return segmented_image
 
-    def _limit_to_ellipse(self, k_segmentation = 1):
+    def limit_to_ellipse(self, k_segmentation = 1):
         """
-        Limit the segmentation mask to an elliptical region.
+        Apply an elliptical aperture to limit the segmentation mask.
 
-        Returns:
-        --------
-        ndarray
-            Updated segmentation mask limited to an ellipse.
+        Parameters
+        ----------
+        k_segmentation : float
+            Multiplicative factor applied to the Petrosian radius.
+
+        Returns
+        -------
+        segmented_image : ndarray
+            Binary mask within the elliptical region.
         """
         segmented_image = np.zeros_like(self.first_segmentation)
         # Extract parameters
@@ -80,54 +127,77 @@ class SegmentImage:
         segmented_image[ellipse_mask] = 1
         return segmented_image
 
-    def _limit_to_intensity(self, k_segmentation = 1):
-        """
-        Limit the segmentation mask to regions above an intensity threshold.
+    def limit_to_intensity(self, k_segmentation = 1):
+        """Apply an intensity-based threshold to the segmentation mask.
 
-        Returns:
-        --------
-        ndarray
-            Updated segmentation mask limited to intensity.
+        Parameters
+        ----------
+        k_segmentation : float
+            Multiplicative factor applied to the Petrosian radius.
+
+        Returns
+        -------
+        segmented_image : ndarray
+            Binary mask thresholded by intensity.
+        mu_thresh : float
+            Intensity threshold used.
         """
+        self.image = np.ascontiguousarray(self.image)
         box_kernel = Box2DKernel(round(self.rp / 5))
         lotz_image = convolve(self.image, box_kernel, normalize_kernel=True)
 
         segmented_image = np.where(self.first_segmentation == self.main_index, 1, 0)
-        mu_thresh = self._average_intensity(k_segmentation)
+        mu_thresh = self.average_intensity(k_segmentation)
         
         segmented_image = np.where(np.logical_and(lotz_image >= mu_thresh, segmented_image == 1), 1, 0)
 
         return segmented_image, mu_thresh
 
-    def _average_intensity(self, k_segmentation = 1):
+    def average_intensity(self, k_segmentation=1):
         """
         Calculate the average intensity within a specified elliptical annulus.
 
-        Returns:
-        --------
-        float
-            Average intensity within the elliptical annulus.
+        Parameters
+        ----------
+        k_segmentation : float
+            Scale factor applied to the Petrosian radius.
+
+        Returns
+        -------
+        mup : float
+            Mean surface brightness in the annulus.
         """
-        
-        
-        flux1, area1 = self._calculate_flux_and_area(self.x, self.y, self.a, self.b, self.theta, (k_segmentation * self.rp)*0.9)
-        flux2, area2 = self._calculate_flux_and_area(self.x, self.y, self.a, self.b, self.theta, (k_segmentation * self.rp)*1.1)
+        flux1, area1 = self.calculate_flux_and_area(self.x, self.y, self.a, self.b, self.theta, (k_segmentation * self.rp) * 0.9)
+        flux2, area2 = self.calculate_flux_and_area(self.x, self.y, self.a, self.b, self.theta, (k_segmentation * self.rp) * 1.1)
 
         mup = (flux2 - flux1) / (area2 - area1)
         return mup
+    
+    def calculate_flux_and_area(self, xc, yc, a, b, theta, scale):
+        """Calculate flux and area of an elliptical aperture.
 
-    def _calculate_flux_and_area(self, xc, yc, a, b, theta, scale):
-        """
-        Helper function to calculate flux and area for a given scale.
+        Parameters
+        ----------
+        xc, yc : float
+            Center coordinates.
+        a, b : float
+            Semi-major and semi-minor axes.
+        theta : float
+            Orientation angle (radians).
+        scale : float
+            Scaling factor for the aperture.
 
-        Returns:
-        --------
-        tuple
-            Flux and area at the given scale.
+        Returns
+        -------
+        flux : float
+            Total flux within the aperture.
+        area : float
+            Geometric area of the elliptical aperture.
         """
         flux, _, _ = sep.sum_ellipse(self.image, [xc], [yc], [scale], [scale * b/a], [theta], subpix=100)
         area = np.pi * (scale) * (scale * b/a)
         return flux[0], area
+
     
 
 

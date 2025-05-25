@@ -1,23 +1,41 @@
 import numpy as np
 import pandas as pd
 from scipy.ndimage import distance_transform_edt
+"""
+FlaggingHandler
+===============
 
+Class to compute flags indicating whether a galaxy is affected by nearby bright or overlapping sources.
+
+Attributes
+----------
+detected_objects : pandas.DataFrame
+    Table of objects detected in the image.
+segmentation_map : ndarray
+    2D segmentation map from object detection.
+image : ndarray, optional
+    Original image (used for edge checking).
+
+Methods
+-------
+flag_objects :
+    Compute proximity, brightness, and edge-related flags for quality control.
+"""
 class FlaggingHandler:
     """
     Class to handle flagging of secondary objects in astronomical images.
     """
     def __init__(self, detected_objects, segmentation_map, image = None):
-        """
-        Initialize the FlaggingHandler.
+        """Initialize the FlaggingHandler.
 
-        Parameters:
-        -----------
-        detected_objects : pandas DataFrame
-            DataFrame of detected objects with normalized keys.
+        Parameters
+        ----------
+        detected_objects : pandas.DataFrame
+            Catalog of detected sources.
         segmentation_map : ndarray
-            Segmentation map corresponding to the detected objects.
-        config : dict
-            Configuration parameters for flagging.
+            Segmentation image with object labels.
+        image : ndarray, optional
+            Image array used to verify edge proximity.
         """
         self.detected_objects = detected_objects
         self.segmentation_map = segmentation_map
@@ -25,14 +43,34 @@ class FlaggingHandler:
         
         
     def flag_objects(self, k_flag = 1.5, delta_mag = 1, nsec_max = 4, r = 20):
-        """
-        Flag secondary objects based on proximity, magnitude differences, and other criteria.
+        """Evaluate proximity and contamination flags for the main galaxy.
 
-        Returns:
-        --------
+        Parameters
+        ----------
+        k_flag : float
+            Multiplicative factor to define flagging ellipse radius.
+        delta_mag : float
+            Magnitude threshold to consider a nearby object "bright".
+        nsec_max : int
+            Maximum number of allowed secondary objects nearby.
+        r : float
+            Base radius for proximity checks (in pixels).
+
+        Returns
+        -------
         flags : dict
-            Dictionary containing flags for various conditions.
-        """
+            Dictionary with the following keys:
+            - 'maingalaxy_flag': 1 if no galaxy found at image center.
+            - 'edge_flag': 1 if galaxy is too close to a frame edge.
+            - 'Nsec_flag': 1 if too many neighbors within radius.
+            - 'BrightObj_flag': 1 if a nearby bright object exists.
+            - 'rflag_pixels': radius used for spatial checks.
+            - 'N_rcheck': number of sources within radius.
+            - 'N_deltaMAG': number of sources within delta magnitude.
+            - 'normDist_closest': normalized distance to closest object.
+            - 'minMAG_diff': minimum magnitude difference found.
+            - 'dist_minMAG_diff': distance to closest bright object.
+        """        
         flags = {}
 
         # Identify the main object index based on the central pixel of the segmentation map

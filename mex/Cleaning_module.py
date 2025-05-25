@@ -4,22 +4,48 @@ from math import atan2, sqrt, cos, sin, pi
 import copy
 import mex.cleaning as cleaning
 
+"""
+GalaxyCleaner
+=============
+
+Class to remove secondary sources from galaxy images and interpolate cleaned regions.
+
+Attributes
+----------
+image : ndarray
+    Galaxy image to be cleaned.
+segmentation : ndarray
+    Segmentation map identifying objects in the image.
+main_index : int
+    ID of the main object located at the center of the segmentation.
+
+Methods
+-------
+flat_filler :
+    Replace secondary objects with a flat background value.
+gaussian_filler :
+    Replace secondary objects with Gaussian noise.
+isophotes_filler :
+    Interpolate removed regions based on elliptical isophotes.
+"""
 class GalaxyCleaner:
     """
     Class to clean galaxy images by removing secondary objects and filling regions.
     """
     def __init__(self, image, segmentation):
-        """
-        Initialize the GalaxyCleaner.
+        """Initialize the GalaxyCleaner.
 
-        Parameters:
-        -----------
-        galaxy_image : ndarray
-            The galaxy image to clean.
-        segmentation_map : ndarray
-            The segmentation map identifying objects in the image.
-        config : dict
-            Configuration parameters for cleaning.
+        Parameters
+        ----------
+        image : ndarray
+            Galaxy image.
+        segmentation : ndarray
+            Object segmentation map.
+
+        Raises
+        ------
+        ValueError
+            If segmentation does not match image shape or no object at image center.
         """
         if segmentation.shape != image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
@@ -39,13 +65,40 @@ class GalaxyCleaner:
        
             
     def flat_filler(self, median = 0):
+        """Replace non-primary sources with a flat value.
+
+        Parameters
+        ----------
+        median : float
+            Value used to replace secondary objects.
+
+        Returns
+        -------
+        clean_image : ndarray
+            Cleaned image with flat background replacements.
+        """
+
         clean_image = copy.deepcopy(self.image)
         clean_image[(self.segmentation != self.main_index) &
                      (self.segmentation != 0)] = median
         return(clean_image)
     
     def gaussian_filler(self, mean = 0, std = 1):
-        
+        """Replace secondary objects with Gaussian noise.
+
+        Parameters
+        ----------
+        mean : float
+            Mean of the normal distribution.
+        std : float
+            Standard deviation of the normal distribution.
+
+        Returns
+        -------
+        clean_image : ndarray
+            Cleaned image with Gaussian noise in masked areas.
+        """
+
         clean_image = copy.deepcopy(self.image)
         
         Nreplaced = len(clean_image[(self.segmentation != self.main_index) &
@@ -59,9 +112,13 @@ class GalaxyCleaner:
     
         
  
-    def remove_secondary_objects(self):
-        """
-        Remove secondary objects from an image based on a segmentation mask.
+    def _remove_secondary_objects(self):
+        """Zero out all secondary objects in the image.
+
+        Returns
+        -------
+        image_copy : ndarray
+            Image with secondary objects set to zero.
         """
         # Create a mask for the target galaxy and background
         mask = (self.segmentation == self.main_index) | (self.segmentation == 0)
@@ -71,7 +128,7 @@ class GalaxyCleaner:
 
         return image_copy
 
-    def find_scale(self, x, y, center_x, center_y, angle, max_rad, min_rad):
+    def _find_scale(self, x, y, center_x, center_y, angle, max_rad, min_rad):
         """
         Calculate the scale factor for a given point in an elliptical reference frame.
 
@@ -106,7 +163,7 @@ class GalaxyCleaner:
         return sqrt(part1**2 + part2**2)
 
 
-    def find_point(self, scale, rho, max_rad, min_rad, center_x, center_y, angle):
+    def _find_point(self, scale, rho, max_rad, min_rad, center_x, center_y, angle):
         """
         Calculate the (x, y) coordinates of a point on the ellipse based on a given scale and angle.
 
@@ -143,23 +200,22 @@ class GalaxyCleaner:
         return x2, y2
 
   
-    def interpolate_ellipse(self, removed_objects, angle):
-        """
-        Interpolate missing pixels in an image using an elliptical approach.
+    def _interpolate_ellipse(self, removed_objects, angle):
+        """Interpolate over masked pixels using elliptical paths.
 
-        Parameters:
+        Parameters
         ----------
-        image : ndarray
-            2D array representing the input image.
+        removed_objects : ndarray
+            Image with masked secondary objects.
         angle : float
-            Rotation angle of the ellipse in radians.
+            Elliptical orientation angle (radians).
 
-        Returns:
+        Returns
         -------
         image_copy : ndarray
-            Image with interpolated values.
+            Interpolated image.
         """
-        # Image dimensions
+       # Image dimensions
         h, w = removed_objects.shape
         center_x, center_y = int(np.floor(w / 2.0)), int(np.floor(h / 2.0))
         max_rad = float(h / 2.0)
@@ -180,14 +236,14 @@ class GalaxyCleaner:
                     continue
 
                 mask[j, i] = 1.0  # Mark as missing
-                sc = self.find_scale(i, j, center_x, center_y, angle, max_rad, min_rad)
+                sc = self._find_scale(i, j, center_x, center_y, angle, max_rad, min_rad)
                 rho = atan2(j - center_y, i - center_x)
                 same_ellipse = 0
                 lstPts = []
 
                 # Loop over delta_radius for interpolation
                 for d_rho in delta_radius:
-                    auxx, auxy = self.find_point(sc, rho + d_rho, max_rad, min_rad, center_x, center_y, angle)
+                    auxx, auxy = self._find_point(sc, rho + d_rho, max_rad, min_rad, center_x, center_y, angle)
 
                     # Check bounds
                     if not (np.isnan(auxx) or np.isnan(auxy)):
@@ -224,8 +280,8 @@ class GalaxyCleaner:
                                                                 self.main_index)
             clean_image = np.asarray(cleaning.interpolate_ellipse(removed_objects, theta))
         except:            
-            removed_objects = self.remove_secondary_objects()
-            clean_image = np.asarray(self.interpolate_ellipse(removed_objects, theta))
+            removed_objects = self._remove_secondary_objects()
+            clean_image = np.asarray(self._interpolate_ellipse(removed_objects, theta))
             
         return clean_image
 
