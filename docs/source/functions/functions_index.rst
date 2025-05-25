@@ -19,6 +19,6 @@ This section provides a practical guide to the functions available in the Morpho
    Image_Cleaning
    Light_Profile_Analysis
    Segmentation_Mask
-..   CAS_metrics
-..   MEGG_metrics
+   CAS_metrics
+   MEGG_metrics
 
