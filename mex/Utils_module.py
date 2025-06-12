@@ -144,7 +144,7 @@ def extract_cutouts(image, segmask, expansion_factor=1.5, estimate_noise=False):
     return image_cutout, segmask_cutout, (y_min_cut, y_max_cut, x_min_cut, x_max_cut), noise_img, best_corner
 
 
-def recenter_image(image, xm, ym, final_size=None):
+def recenter_image(image, x, y, final_size=None):
     """
     Recenters the image around the coordinates (xm, ym) and returns a square image with odd size.
 
@@ -160,7 +160,7 @@ def recenter_image(image, xm, ym, final_size=None):
     h, w = image.shape
 
     # Round center to int
-    xc, yc = int(round(xm)), int(round(ym))
+    xc, yc = int(round(x)), int(round(y))
 
     # Compute max size if not specified
     if final_size is None:
@@ -182,7 +182,7 @@ def recenter_image(image, xm, ym, final_size=None):
     return image[y1:y2, x1:x2]
 
 
-def _vary_galaxy_image(image, sigma_bkg = None, num_realizations=100):
+def vary_galaxy_image(image, sigma_bkg = None, num_realizations=100):
     """
     Generates multiple realizations of an image with Poisson noise (photon noise) and Gaussian background noise.
     

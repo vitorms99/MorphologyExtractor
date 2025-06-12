@@ -8,6 +8,7 @@ from . import Metrics_module
 from . import Petrosian_module
 from . import cleaning  # Cython-compiled extension module
 
+
 __version__ = "0.1.0"
 
 # Define public API
@@ -21,4 +22,5 @@ __all__ = [
     "Petrosian_module",
     "cleaning",
 ]
+
 

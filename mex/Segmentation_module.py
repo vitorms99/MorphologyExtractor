@@ -145,12 +145,9 @@ class SegmentImage:
         self.image = np.ascontiguousarray(self.image)
         box_kernel = Box2DKernel(round(self.rp / 5))
         lotz_image = convolve(self.image, box_kernel, normalize_kernel=True)
-
-        segmented_image = np.where(self.first_segmentation == self.main_index, 1, 0)
+        segmented_image = self.limit_to_ellipse(k_segmentation = k_segmentation+0.3)
         mu_thresh = self.average_intensity(k_segmentation)
-        
         segmented_image = np.where(np.logical_and(lotz_image >= mu_thresh, segmented_image == 1), 1, 0)
-
         return segmented_image, mu_thresh
 
     def average_intensity(self, k_segmentation=1):

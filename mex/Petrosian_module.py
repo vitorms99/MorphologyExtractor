@@ -124,11 +124,11 @@ class PetrosianCalculator:
 
         return eta, growth_curve, raio, rp, eta_flag
 
-    def _optimize_eta(self, scale, x, y, a, b, theta, rp_thresh = 0.2, interpolate_order = 3, Naround = 3):
+    def _optimize_eta(self, scale, x, y, a, b, theta, rp_thresh=0.2, interpolate_order=3, Naround=3):
         """
         Optimize the Petrosian radius based on eta values.
 
-        Returns:
+        Returns
         --------
         tuple
             Eta values, the optimized Petrosian radius, and the growth curve.
@@ -138,36 +138,44 @@ class PetrosianCalculator:
         if len(scale) == 0:
             raise ValueError("Aperture scale array is empty. Check 'a' and image dimensions.")
 
-        while (count < Naround) and (index < len(scale)):     
+        while (count < Naround) and (index < len(scale)):
             s = scale[index]
-            num, den, eta_iter, radius, flux3 = self._calculate_eta_values(s, x, y, a, b, theta)
-            numerador.append(num[0])
-            denominador.append(den[0])
-            eta.append(eta_iter[0])
-            raio.append(radius)
-            growth_curve.append(flux3[0])
+            try:
+                num, den, eta_iter, radius, flux3 = self._calculate_eta_values(s, x, y, a, b, theta)
+                numerador.append(num[0])
+                denominador.append(den[0])
+                eta.append(eta_iter[0])
+                raio.append(radius)
+                growth_curve.append(flux3[0])
 
-            if eta_iter - rp_thresh < 0:
-                count += 1
-
-            if count == 1:
-                closest_eta_index = index
-
+                if eta_iter - rp_thresh < 0:
+                    count += 1
+                if count == 1:
+                    closest_eta_index = index
+            except Exception as e:
+                # Log and continue
+                print(f"[WARNING] Skipping scale {s:.2f} due to error: {e}")
             index += 1
-        numerador = np.array(numerador)
-        denominador = np.array(denominador)
+
         eta = np.array(eta)
         raio = np.array(raio)
         growth_curve = np.array(growth_curve)
         eta_flag = 0
+
+        # Handle insufficient points or bad data
+        if len(eta) < interpolate_order + 1 or np.all(~np.isfinite(eta)):
+            warnings.warn("Interpolation failed due to insufficient or invalid eta values.", UserWarning)
+            return eta, raio, growth_curve, np.nan, 1
+
         if index >= len(scale) - 1:
-            warnings.warn("annomaly in eta function, calculating Rp using approximations, results may be not accurate", UserWarning)
-
-            closest_eta_index = np.where(np.absolute(eta - rp_thresh) == min(np.absolute(eta-rp_thresh)))[0][0]
+            warnings.warn("Annomaly in eta function, calculating Rp using approximations, results may be not accurate", UserWarning)
+            closest_eta_index = np.nanargmin(np.abs(eta - rp_thresh))
             eta_flag = 1
-        return eta, raio, growth_curve, self._interpolate_eta(np.array(eta), np.array(raio), closest_eta_index, rp_thresh, 
-                                                              interpolate_order, Naround), eta_flag
 
+        # Interpolate only if safe
+        rp = self._interpolate_eta(eta, raio, closest_eta_index, rp_thresh, interpolate_order, Naround)
+        return eta, raio, growth_curve, rp, eta_flag
+    
     def _standard_eta(self, scale, x, y, a, b, theta, rp_thresh = 0.2, interpolate_order = 3, Naround = 3):
         """
         Standard calculation of eta values without optimization.

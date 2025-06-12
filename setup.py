@@ -53,6 +53,11 @@ install_requires=[
     extras_require={
         "dev": ["pytest", "black", "flake8"],
     },
+    entry_points={
+    'console_scripts': [
+        'mex = mex.__main__:main',
+    ],
+    },
     python_requires=">=3.8",
     include_package_data=True,
     package_data={

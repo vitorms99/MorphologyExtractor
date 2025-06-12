@@ -1,16 +1,54 @@
-# Ignore compiled bytecode
+# Byte-compiled / cache
 __pycache__/
+*.py[cod]
+*.so
 
-# Ignore Anaconda project folder
-anaconda_projects/
+# Jupyter/IPython checkpoints
+.ipynb_checkpoints/
 
-# Ignore build artifacts
+# macOS hidden files
+.DS_Store
+
+# Build and dist
 build/
-mex.egg-info/
+dist/
+*.egg-info/
 
-# Ignore testing and GUI files
+# Local dev environments
+anaconda_projects/
+.venv/
+.env/
+*.env
+
+# Logs, results, outputs
+*.log
+*.csv
+*.json
+*.fits
+*.hdf5
+
+# Docs, PDFs
+*.pdf
+docs/_build/
+
+# Test outputs and scratch
 Tests/
-GUI.py
-mex_main.py
-mex_main.ipynb
+Tests/*
+
+# Keep only Examples folder (case-insensitive)
+!Examples/
+Examples/*
+!Examples/**
+
+# Git and GitHub config (optional)
+.git/
+.github/
+
+# Ignore compiled C or Cython files
+*.c
+*.cpp
+*.pyd
+*.pyo
+*.dll
+*.dylib
 

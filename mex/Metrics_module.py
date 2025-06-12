@@ -11,6 +11,7 @@ from scipy import signal, stats
 from skimage.transform import radon, resize
 from astropy.convolution import convolve
 import astropy.convolution as convolution
+from scipy.signal import windows
 from astropy.convolution import Gaussian2DKernel, Box2DKernel, Tophat2DKernel 
 from math import floor, sqrt
 from scipy.ndimage import sobel
@@ -162,7 +163,7 @@ class Concentration:
          
         return(r_i)
     
-    def get_concentration(self, x, y, a, b, theta, method = "conselice", f_inner = 0.2, f_outter = 0.8, rmax = None, 
+    def get_concentration(self, x, y, a, b, theta, method = "ferrari", f_inner = 0.2, f_outter = 0.8, rmax = None, 
                           sampling_step = 1, Naround = 2, interp_order = 3):
                           
         """
@@ -177,7 +178,7 @@ class Concentration:
         theta : float
             Ellipticity angle (in radians).
         method : str
-            Method for concentration ('conselice' or 'barchi').
+            Method for concentration ('conselice' or 'ferrari').
         f_inner : float
             Fraction of total flux for inner radius.
         f_outter : float
@@ -211,12 +212,12 @@ class Concentration:
         if method == "conselice":
             c = 5*np.log10(ratio)
         
-        elif method == "barchi":
+        elif method == "ferrari":
             ratio = routter/rinner
             c = np.log10(ratio)
             
         else:
-            raise("Invalid method. Options are 'conselice' and 'barchi'.")
+            raise("Invalid method. Options are 'conselice' and 'ferrari'.")
         
         return(float(c), rinner, routter)
     
@@ -812,8 +813,7 @@ Asymmetry
 
 This class implements different ways to calculate the asymmetry of a galaxy light distribution, including:
 - Conselice (2003) absolute/rms asymmetry
-- Pixel-wise normalized asymmetry (Sampaio)
-- Correlation-based asymmetry (Barchi)
+- Correlation-based asymmetry (Ferrari et al.2015)
 
 It supports custom segmentation masks, optional noise correction, and center optimization.
 
@@ -952,12 +952,12 @@ class Asymmetry:
             A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method)
         else:
             A_noise = 0.0
-            center_noise = None
+            center_noise = (None, None)
             niter_noise = None
     
         A_total = A_gal - A_noise
     
-        return float(A_total), float(A_gal), float(A_noise), tuple(center_gal), tuple(center_noise), int(niter_gal), int(niter_noise)
+        return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
 
     def get_sampaio_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50):
         """
@@ -1041,16 +1041,16 @@ class Asymmetry:
             A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method)
         else:
             A_noise = 0.0
-            center_noise = None
+            center_noise = (None, None)
             niter_noise = None
     
         A_total = A_gal - A_noise
     
         return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
 
-    def get_barchi_asymmetry(self, corr_type='pearson', pixel_comparison='equal', max_iter=50):
+    def get_ferrari_asymmetry(self, corr_type='pearson', pixel_comparison='equal', max_iter=50):
         """
-        Compute Barchi-style asymmetry: 1 - correlation.
+        Compute Ferrari-style asymmetry: 1 - correlation.
 
         Parameters
         ----------
@@ -1063,7 +1063,7 @@ class Asymmetry:
 
         Returns
         -------
-        A_barchi : float
+        A : float
             Asymmetry score (1 - r).
         r : float
             Correlation coefficient.
@@ -1120,9 +1120,9 @@ class Asymmetry:
             return r_best, center, niter
     
         r_max, center, niter = minimize_corr()
-        A_barchi = 1 - r_max
+        A = 1 - r_max
     
-        return A_barchi, r_max, center, niter
+        return A, r_max, center, niter
 
     def plot_asymmetry_scatter(self, comparison="equal"):
         """
@@ -1229,7 +1229,7 @@ Smoothness
 ==========
 
 A class to compute the Smoothness (or Clumpiness) of a galaxy image using different definitions,
-including Conselice (2003), Sampaio, and Barchi-style methods.
+including Conselice (2003), Sampaio, and Ferrari-style methods.
 
 Attributes
 ----------
@@ -1250,13 +1250,16 @@ get_smoothness_conselice :
     Compute smoothness using Conselice et al. (2003) definition.
 get_smoothness_sampaio :
     Compute pixel-wise normalized smoothness (Sampaio definition).
-get_smoothness_barchi :
-    Compute smoothness as 1 - correlation (Barchi definition).
+get_smoothness_ferarri :
+    Compute smoothness as 1 - correlation (Ferrari definition).
 plot_smoothness_comparison :
     Display original, smoothed, and residual images.
 plot_smoothness_scatter :
     Display scatter plots between original and smoothed pixels.
 """
+
+
+
 class Smoothness:
     def __init__(self, image, segmentation = None, noise = None, smoothing_factor = 5, 
              smoothing_filter = "box"):
@@ -1298,10 +1301,22 @@ class Smoothness:
             kernel = Tophat2DKernel(round(smoothing_factor))
             
         elif smoothing_filter == "gaussian":
-            kernel = Gaussian2DKernel(x_stddev = round(smoothing_factor),
-                                      y_stddev = round(smoothing_factor))
+            size = round(smoothing_factor)
+            size += 1 - size % 2  # Make odd if even
+            kernel = Gaussian2DKernel(x_stddev = round(size),
+                                      y_stddev = round(size))
+           
+        elif smoothing_filter == "hamming":
+            def hamming_2d_kernel(size):
+                win_1d = windows.hamming(size)
+                kernel = np.outer(win_1d, win_1d)
+                return kernel / kernel.sum()
+            size = round(smoothing_factor)
+            size += 1 - size % 2  # Make odd if even
+            kernel = hamming_2d_kernel(round(size))
+
         else:
-            raise Exception("Invalid smoothing filter. Options are 'box', 'gaussian', and 'tophat'.")
+            raise Exception("Invalid smoothing filter. Options are 'box', 'gaussian', 'hamming', and 'tophat'.")
         
             
         
@@ -1395,9 +1410,9 @@ class Smoothness:
         
         return S_final, S_gal, S_noise
 
-    def get_smoothness_barchi(self, method="spearman"):
+    def get_smoothness_ferrari(self, method="spearman"):
         """
-        Compute the Smoothness parameter following Barchi et al. (2020),
+        Compute the Smoothness parameter following Ferrari et al. (2015),
         based on the correlation between the original and smoothed images.
     
         Smoothness is defined as: S = 1 - ρ,

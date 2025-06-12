@@ -32,8 +32,6 @@ To use this metric in `mex`, initialize the `Moment_of_light` class with a clean
 
     moment_calculator = Moment_of_light(clean_mini, segmentation=segmented_mini)
 
-Compute M20
-~~~~~~~~~~~
 
 The method :code:`get_m20` calculates the M20 index by summing the second-order moments of the brightest pixels that contribute to a specified fraction (typically 20%) of the total galaxy flux. The center used in the calculation can be fixed or optimized to minimize the total moment.
 
@@ -47,24 +45,6 @@ Where :math:`M_i = f_i \cdot [(x_i - x_c)^2 + (y_i - y_c)^2]` is the second-orde
     m20, xc_m20, yc_m20 = moment_calculator.get_m20(f=0.2, minimize_total=True)
 
 This returns the M20 value along with the coordinates of the center used in the calculation.
-
-Plot contributing pixels
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-The method :code:`plot_M20_contributors` displays the original galaxy image with an overlay of the pixels that contribute to the M20 calculation and the optimized center location.
-
-.. code-block:: python
-
-    moment_calculator.plot_M20_contributors(x0, y0, minimize_total=True)
-
-This is a useful diagnostic tool to visually verify that the M20 computation is tracing the expected flux structure.
-
-.. figure:: ../_static/m20_contributors.png
-   :alt: m20_contributors
-   :align: center
-   :width: 100%
-
-   Galaxy image, center that minimizes total second moment of light, and the pixels contributing to the top "fraction" flux.
    
    
 Shannon Entropy
@@ -83,9 +63,6 @@ To compute the entropy, initialize the :class:`mex.Metrics_module.Shannon_entrop
         segmentation=segmented_mini
     )
 
-Compute Entropy
-~~~~~~~~~~~~~~~
-
 The method :code:`get_entropy()` estimates the Shannon entropy using a histogram of pixel values within the segmentation mask:
 
 .. math::
@@ -99,24 +76,6 @@ Where :math:`p_i` are the normalized bin frequencies. Optionally, the value can 
 
 The method returns the entropy.
 
-Visualizing Histogram and CDF
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-You can also visualize the histogram and its cumulative distribution function (CDF) using the :code:`plot_entropy_frame()` method. It overlays both the normalized histogram (blue bars) and the CDF (red line) of the pixel intensities:
-
-.. code-block:: python
-
-    entropy_calculator.plot_entropy_frame(bins=100)
-
-This function provides a quick visual check of the intensity spread and underlying light distribution complexity.
-
-.. figure:: ../_static/entropy_hist.png
-   :alt: entropy_hist
-   :align: center
-   :width: 100%
-   
-   Galaxy pixels histogram and cumulative distribution function (CDF).
-   
    
 Gini Index
 ----------
@@ -134,8 +93,6 @@ To compute the index, initialize the :class:`mex.Metrics_module.Gini_index` clas
         segmentation=segmented_mini
     )
 
-Compute the Gini Index
-~~~~~~~~~~~~~~~~~~~~~~
 
 The Gini index is defined as:
 
@@ -148,8 +105,6 @@ Where :math:`I_i` are the sorted pixel intensities and :math:`\bar{I}` is their 
 
     gini = gini_calculator.get_gini()
 
-Lorentz Curve
-~~~~~~~~~~~~~
 
 You can also access the Lorentz curve, using:
 
@@ -157,21 +112,6 @@ You can also access the Lorentz curve, using:
 
     cumulative_pixels, cumulative_light = gini_calculator.compute_lorentz_curve()
 
-Gini Index Visualization
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-To visualize the Gini index, use the following plot function, which overlays the Lorentz curve, equality line, and shaded area representing the Gini coefficient:
-
-.. code-block:: python
-
-    gini_calculator.plot_gini_rep()
-
-.. figure:: ../_static/gini_area.png
-   :alt: gini_area
-   :align: center
-   :width: 100%
-   
-   Fraction of total light as a function of fraction of pixels. The area between the equality line (in red) and the Lorentz curve (in blue) defines the Gini index.
 
 Gradient Pattern Analysis (G2)
 ------------------------------
@@ -191,8 +131,6 @@ To use this metric, instantiate the :class:`mex.Metrics_module.GPA` class with a
         segmentation=segmented_mini
     )
 
-G2 Index Computation
-~~~~~~~~~~~~~~~~~~~~
 
 The G2 index is calculated using the method:
 
@@ -206,48 +144,4 @@ Where:
 - `ptol` is the threshold in **phase angle** (in degrees).
 
 The value returned is a float between 0 and 1, with larger values corresponding to more asymmetric vector distributions.
-
-Gradient Field Visualization
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-To explore the symmetry visually, you can plot both the original and asymmetric gradient fields:
-
-.. code-block:: python
-
-    gpa.plot_gradient_field(mtol=0.1, ptol=143)
-
-This function generates two vector fields:
-
-- Original: all gradient vectors from the masked galaxy region.
-- Asymmetric: vectors that fail symmetry matching (after a 180° rotation).
-
-.. figure:: ../_static/gradient_field.png
-   :alt: gradient_field
-   :align: center
-   :width: 100%
-   
-   Galaxy light distribution gradient field (left), and asymmetric gradient field (right).
-
-
-
-Vector Property Distributions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-GPA also provides a way to inspect the underlying distributions of gradient magnitudes and phase angles:
-
-.. code-block:: python
-
-    gpa.plot_hists()
-
-This generates two normalized histograms:
-
-- Left: distribution of normalized gradient magnitudes.
-- Right: angular distribution of vector orientations (in degrees).
-
-.. figure:: ../_static/hist_vector.png
-   :alt: hist_vector
-   :align: center
-   :width: 100%
-   
-   Normalized histogram of module (left) and phase (right).
 
