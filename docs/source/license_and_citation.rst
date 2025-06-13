@@ -20,12 +20,13 @@ In addition to MEx, this package depends on several open-source tools and librar
 
 We thank the authors of these packages for making their work openly available.
 
----
+--------
 
 Citation
 --------
 
 If you use MEx in a publication, please cite:
+
 - **Kolesnikov et al. (2024, 2025)** – the first reference where MEx was applied.
 
 - **Sampaio et al. (in preparation)** – the main reference for MEx  
