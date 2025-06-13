@@ -10,3 +10,4 @@ joblib
 filelock
 cython
 tk  # this is platform-dependent; Read the Docs uses it internally
+sphinx_rtd_theme
