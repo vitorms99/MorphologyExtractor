@@ -6,8 +6,12 @@
 
 
 Morphology Extractor (MEx)
-==========================
 
+==========================
+.. image:: https://readthedocs.org/projects/morphologyextractor/badge/?version=latest
+   :target: https://morphologyextractor.readthedocs.io/en/latest/?badge=latest
+   :alt: Documentation Status
+   
 **Morphology Extractor (MEx)** is an open-source, modular Python package designed for the extraction of non-parametric morphological indices from galaxy images. It provides a reproducible and transparent framework for analyzing galaxy structure across surveys and redshifts, without relying on visual classifications or rigid parametric models.
 
 Galaxy morphology encodes essential information about evolutionary processes such as star formation, feedback, and environmental effects. Traditional methods for classifying galaxies—whether visual, parametric, or deep learning-based—each face significant limitations, including subjectivity, model-dependence, or lack of interpretability. In contrast, non-parametric indices like Concentration, Asymmetry, Smoothness (CAS), and M20, Entropy, Gini, and Gradient Pattern Asymmetry (MEGG) offer model-independent metrics that can be systematically applied to heterogeneous datasets.
@@ -28,13 +32,13 @@ Whether you're studying galaxy evolution in clusters, exploring disturbed morpho
    :caption: Documentation Contents:
 
    installation
+   gui_cli
    tutorial/tutorial_index
    functions/functions_index
-   GUI
    contributing
    license_and_citation
    api/modules
-
+   
 Indices and tables
 ==================
 * :ref:`genindex`
