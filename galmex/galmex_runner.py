@@ -21,14 +21,14 @@ from datetime import timedelta,datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from astropy.io import fits
 from astropy.convolution import convolve, Box2DKernel
-from mex.Utils_module import open_fits_image, get_files_with_format, recenter_image, extract_cutouts, remove_central_region, vary_galaxy_image
-from mex.Background_module import BackgroundEstimator
-from mex.Detection_module import ObjectDetector
-from mex.Cleaning_module import GalaxyCleaner
-from mex.Petrosian_module import PetrosianCalculator
-from mex.Flagging_module import FlaggingHandler
-from mex.Segmentation_module import SegmentImage
-from mex.Metrics_module import Concentration, Asymmetry, Smoothness, Moment_of_light, Shannon_entropy, Gini_index, GPA
+from galmex.Utils_module import open_fits_image, get_files_with_format, recenter_image, extract_cutouts, remove_central_region, vary_galaxy_image
+from galmex.Background_module import BackgroundEstimator
+from galmex.Detection_module import ObjectDetector
+from galmex.Cleaning_module import GalaxyCleaner
+from galmex.Petrosian_module import PetrosianCalculator
+from galmex.Flagging_module import FlaggingHandler
+from galmex.Segmentation_module import SegmentImage
+from galmex.Metrics_module import Concentration, Asymmetry, Smoothness, Moment_of_light, Shannon_entropy, Gini_index, GPA
 
 
 # In[2]:
@@ -1151,7 +1151,7 @@ class App(tk.Tk):
         self.resizable(True, True)
 
         # Apply Azure theme
-        self.tk.call("source", "mex/Azure-ttk-theme/azure.tcl")
+        self.tk.call("source", "galmex/Azure-ttk-theme/azure.tcl")
         self.tk.call("set_theme", "light")
         self.style = ttk.Style()
         self.style.configure("TNotebook.Tab", font=("Arial", 18, "bold"))
@@ -2720,7 +2720,7 @@ class App(tk.Tk):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="MEx (Morphology Extractor): Extract non-parametric morphology from galaxy images.",
+        description="GalMEx (Galaxy Morphology Extractor): Extract non-parametric morphology from galaxy images.",
         epilog="If no config file is provided, the GUI will launch."
     )
     parser.add_argument(
@@ -2789,7 +2789,7 @@ def main():
         cores = config["initial_settings"].get("cores", 1)
         task_list = [(os.path.join(config["initial_settings"]["cutout_folder"], fname), config) for fname in image_list]
 
-        print(f"[INFO] Running MEx on {len(task_list)} galaxies using {cores} core(s)...")
+        print(f"[INFO] Running GalMEx on {len(task_list)} galaxies using {cores} core(s)...")
         t0 = time.time()
         results = []
         expected_keys = ["rp", "r50"]

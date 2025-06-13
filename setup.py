@@ -27,7 +27,7 @@ ext_modules = cythonize(
 
 setup(
     name="galmex",
-    version="1.0.0",
+    version="1.0.1",
     description="Python package for measuring non-parametric morphological indices of galaxies",
     author="V. M. Sampaio",
     author_email="vitorms999@gmail.com",
