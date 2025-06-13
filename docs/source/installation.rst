@@ -1,7 +1,7 @@
 Installation
 ============
 
-MEx (Morphology Extractor) is available as a Python package and can be installed via `pip` or cloned directly from GitHub for local development.
+MEx (Morphology Extractor) is available as a Python package and can be installed via `pip` or cloned directly from GitHub for local development. It includes both a command-line interface (CLI) and a graphical user interface (GUI) via the `mex` command.
 
 .. contents::
    :local:
@@ -10,18 +10,18 @@ MEx (Morphology Extractor) is available as a Python package and can be installed
 Installing with pip
 -------------------
 
-To install the latest released version from PyPI, run:
+To install the latest released version from PyPI:
 
 .. code-block:: bash
 
-   pip install morphology-extractor
+   pip install mex
 
-This will install MEx along with its core dependencies.
+This installs the `mex` command, which launches the tool in either GUI or CLI mode depending on how it's invoked.
 
 Installing from source
 ----------------------
 
-If you prefer to clone the repository and install manually:
+To install the latest development version:
 
 .. code-block:: bash
 
@@ -29,18 +29,37 @@ If you prefer to clone the repository and install manually:
    cd MorphologyExtractor
    pip install -e .
 
-This will install MEx in *editable mode*, meaning local changes will be reflected immediately.
+This installs MEx in *editable mode*, meaning local changes to the code are immediately reflected.
+
+Usage Modes
+-----------
+
+After installation, MEx can be launched in two main ways:
+
+**GUI mode (default):**
+
+.. code-block:: bash
+
+   mex
+
+**CLI mode using a config file:**
+
+.. code-block:: bash
+
+   mex path/to/config.json
+
+You will be prompted before overwriting any existing output file. Logs and results are saved automatically.
 
 Installing dependencies
 -----------------------
 
-If cloning manually, install required packages with:
+If cloning manually, install required dependencies via:
 
 .. code-block:: bash
 
    pip install -r requirements.txt
 
-The main dependencies include:
+Main dependencies include:
 
 - `numpy`
 - `scipy`
@@ -48,9 +67,11 @@ The main dependencies include:
 - `astropy`
 - `scikit-image`
 - `sep`
-- `photutils`
+- `tqdm`
+- `joblib`
+- `filelock`
 
-(Full list provided in `requirements.txt`.)
+(Full list available in `requirements.txt`.)
 
 Optional: SExtractor integration
 --------------------------------
@@ -72,10 +93,9 @@ To use the external SExtractor tool for object detection:
       export PATH="$PATH:/path/to/sextractor"
       alias sex='sextractor'
 
-   Then restart your terminal and check with:
+   Then restart your terminal and confirm with:
 
    .. code-block:: bash
 
       sex -h
-
 

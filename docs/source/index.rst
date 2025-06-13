@@ -30,6 +30,7 @@ Whether you're studying galaxy evolution in clusters, exploring disturbed morpho
    installation
    tutorial/tutorial_index
    functions/functions_index
+   GUI
    contributing
    license_and_citation
    api/modules
