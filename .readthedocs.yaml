@@ -9,6 +9,12 @@ python:
   install:
     - method: pip
       path: .
+    - requirements: requirements.txt
+
+  # Build tools like Cython needed to run setup.py
+  system_packages: false
+  extra_requirements:
+    - cython
 
 sphinx:
   configuration: docs/conf.py
