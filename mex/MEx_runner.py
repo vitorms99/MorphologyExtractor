@@ -59,8 +59,8 @@ def prepare_output_directories(config):
     os.makedirs(output_folder, exist_ok=True)
 
     # Step 2: Create detection_catalogs folder
-    detection_path = os.path.join(output_folder, "detection_catalogs")
-    os.makedirs(detection_path, exist_ok=True)
+    # detection_path = os.path.join(output_folder, "detection_catalogs")
+    # os.makedirs(detection_path, exist_ok=True)
 
 
 

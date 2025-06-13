@@ -10,8 +10,7 @@ python:
     - requirements: requirements.txt
     - method: pip
       path: .
-    - method: pip
-      args: ["cython"]
+
 
 sphinx:
   configuration: docs/conf.py
