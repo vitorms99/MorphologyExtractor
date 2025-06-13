@@ -26,9 +26,11 @@ Citation
 --------
 
 If you use MEx in a publication, please cite:
+- **Kolesnikov et al. (2024, 2025)** – the first reference where MEx was applied.
 
 - **Sampaio et al. (in preparation)** – the main reference for MEx  
   (*A Zenodo DOI will be provided upon software publication.*)
+
 
 In addition, please cite the original works that MEx builds upon:
 
