@@ -2,11 +2,11 @@ Tutorial
 ========
 
 
-This provides a tutorial on how to use the Morphology Extractor (MEx) package to measure the CAS parameters following `Conselice (2003) <https://iopscience.iop.org/article/10.1086/375001>`_ and MEGG parameters following `Kolesnikov et al. (2024) <https://academic.oup.com/mnras/article/528/1/82/7491068>`_, organized by the main components of the morphological analysis pipeline.
+This provides a tutorial on how to use the Galaxy Morphology Extractor (GalMEx) package to measure the CAS parameters following `Conselice (2003) <https://iopscience.iop.org/article/10.1086/375001>`_ and MEGG parameters following `Kolesnikov et al. (2024) <https://academic.oup.com/mnras/article/528/1/82/7491068>`_, organized by the main components of the morphological analysis pipeline.
 
 Pre-processing steps
 --------------------
-Before extracting any morphological indices, MEx performs a series of pre-processing operations to ensure consistency, noise mitigation, and compatibility across different datasets. These steps are crucial to prepare the raw galaxy image for structural analysis, and include:
+Before extracting any morphological indices, GalMEx performs a series of pre-processing operations to ensure consistency, noise mitigation, and compatibility across different datasets. These steps are crucial to prepare the raw galaxy image for structural analysis, and include:
 
 - **Background subtraction**: Removes large-scale gradients and local sky noise using multiple strategies, including frame-based statistics, constant background, or SEP-based models.
 - **Object detection and cataloging**: Uses SExtractor or SEP to identify all objects in the field, including the main galaxy and potential contaminants.
@@ -36,7 +36,7 @@ Since the background in a cutout is expected to be somewhat flat, a simple frame
 
 .. code-block:: python
 
-   from mex.Background_module import BackgroundEstimator
+   from galmex.Background_module import BackgroundEstimator
 
    bkg_estimator = BackgroundEstimator(galaxy_name, galaxy_image)
    bkg_median, bkg_std, bkg_image, galaxy_image = bkg_estimator.frame_background(
@@ -50,7 +50,7 @@ Object detection can be done using an automated function to run and normalize th
 
 .. code-block:: python
 
-   from mex.Detection_module import ObjectDetector
+   from galmex.Detection_module import ObjectDetector
 
    detector = ObjectDetector(galaxy_name, galaxy_image)
 
@@ -70,7 +70,7 @@ The image is cleaned using elliptical interpolation, preserving the central gala
 
 .. code-block:: python
 
-   from mex.Cleaning_module import GalaxyCleaner
+   from galmex.Cleaning_module import GalaxyCleaner
 
    cleaner = GalaxyCleaner(galaxy_image, first_segmentation)
    galaxy_clean = cleaner.isophotes_filler(catalog['theta'][main_id - 1])
@@ -82,7 +82,7 @@ The Petrosian radius is calculated using an optimized bisection method.
 
 .. code-block:: python
 
-   from mex.Petrosian_module import PetrosianCalculator
+   from galmex.Petrosian_module import PetrosianCalculator
 
    rp_calc = PetrosianCalculator(galaxy_clean, x, y, a, b, theta)
    eta, growth_curve, radius, rp, eta_flag = rp_calc.calculate_petrosian_radius(
@@ -101,7 +101,7 @@ An elliptical segmentation mask is created using 1.5× the Petrosian radius (for
 
 .. code-block:: python
 
-   from mex.Segmentation_module import SegmentImage
+   from galmex.Segmentation_module import SegmentImage
 
    segm = SegmentImage(galaxy_clean, first_segmentation, rp, x, y, a, b, theta)
    segmentation_mask = segm._limit_to_ellipse(k_segmentation=1.5)
@@ -130,7 +130,7 @@ Concentration is defined as the ratio of radii containing 80% and 20% of the tot
 
 .. code-block:: python
 
-   from mex.Metrics_module import Concentration
+   from galmex.Metrics_module import Concentration
    
    conc = Concentration(galaxy_clean)
    C, rinner, routter = conc.get_concentration(
@@ -147,7 +147,7 @@ In the original paper, the smoothness and asymmetry parameters are measured with
 
 .. code-block:: python
    
-   from mex.Utils_module import remove_central_region, recenter_image, extract_cutouts
+   from galmex.Utils_module import remove_central_region, recenter_image, extract_cutouts
 
    segm = SegmentImage(galaxy_clean, first_segmentation, rp, x, y)
    segmentation_mask = segm._limit_to_ellipse(k_segmentation=1.5)
@@ -171,7 +171,7 @@ Asymmetry is calculated by subtracting a 180-degree rotated version of the galax
 
 .. code-block:: python
 
-   from mex.Metrics_module import Asymmetry
+   from galmex.Metrics_module import Asymmetry
 
    asymmetry_calculator = Asymmetry(
        clean_mini_s, angle=180, segmentation=segmented_mini, noise=noise_mini_s
@@ -188,7 +188,7 @@ Smoothness is calculated by subtracting a smoothed version of the image and mask
 
 .. code-block:: python
 
-   from mex.Metrics_module import Smoothness
+   from galmex.Metrics_module import Smoothness
 
    xc, yc = round(len(segmented_mini) / 2), round(len(segmented_mini) / 2)
    segmented_smooth = remove_central_region(segmented_mini, remove_radius=0.1 * rp, xc=xc, yc=yc)
@@ -234,6 +234,7 @@ The **M20** parameter measures the normalized second-order moment of the 20% bri
 
 .. code-block:: python
 
+   from galmex.Metrics_module import Moment_of_light
    moment_calculator = Moment_of_light(galaxy_clean_r, segmentation=segmentation_mask_r)
    m20, xc_m, yc_m = moment_calculator.get_m20(f=0.2, minimize_total=True)
 
@@ -244,6 +245,7 @@ Compute Shannon Entropy (E)
 
 .. code-block:: python
 
+   from galmex.Metrics_module import Shannon_entropy
    entropy_calculator = Shannon_entropy(galaxy_clean_r, segmentation=segmentation_mask_r)
    h = entropy_calculator.get_entropy(normalize=True, nbins=100)
 
@@ -254,6 +256,7 @@ The **Gini index** measures how uniformly the flux is distributed among the pixe
 
 .. code-block:: python
 
+   from galmex.Metrics_module import Gini_index
    gini_calculator = Gini_index(galaxy_clean_r, segmentation=segmentation_mask_r)
    gini = gini_calculator.get_gini()
 
@@ -264,6 +267,7 @@ The **G2** parameter quantifies the spatial variation of the gradient field asso
 
 .. code-block:: python
 
+   from galmex.Metrics_module import GPA
    gpa = GPA(image=galaxy_clean_r, segmentation=segmentation_mask_r)
    g2 = gpa.get_g2(mtol=0.05, ptol=144)
 

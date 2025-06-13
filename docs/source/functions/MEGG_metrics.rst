@@ -5,16 +5,16 @@ The **MEGG** system — an acronym for **M20**, **Entropy**, **Gini**, and **G2*
 
 All MEGG metrics are computed using cleaned and recentered galaxy images, combined with a segmentation mask. Each metric is implemented as a dedicated Python class:
 
-- :class:`mex.Metrics_module.Moment_of_light`  
+- :class:`galmex.Metrics_module.Moment_of_light`  
   Calculates the **M20** index, the second-order moment of the brightest 20% of the galaxy light.
 
-- :class:`mex.Metrics_module.Shannon_entropy`  
+- :class:`galmex.Metrics_module.Shannon_entropy`  
   Computes the **Shannon entropy**, quantifying the disorder or randomness in the pixel intensity distribution.
 
-- :class:`mex.Metrics_module.Gini_index`  
+- :class:`galmex.Metrics_module.Gini_index`  
   Measures the **inequality** of light distribution across galaxy pixels, with higher values indicating strong central concentrations or clumps.
 
-- :class:`mex.Metrics_module.GPA`  
+- :class:`galmex.Metrics_module.GPA`  
   Estimates the **G2 index**, a recent metric based on rotational asymmetry in gradient vector fields, designed to trace morphological disturbances (Kolesnikov et al. 2024).
 
 These classes provide standardized methods for computing each index, along with optional plotting utilities and parameter controls. In the following sections, each metric is described in detail, with example use cases and code snippets.
@@ -24,11 +24,11 @@ Moment of Light (M20)
 
 The M20 parameter measures the spatial distribution of the brightest regions of a galaxy and is particularly sensitive to off-center star-forming clumps and merger signatures. It quantifies the normalized second-order moment of the brightest 20% of the total galaxy flux, as introduced in Lotz et al. (2004).
 
-To use this metric in `mex`, initialize the `Moment_of_light` class with a cleaned image and binary segmentation mask:
+To use this metric in `galmex`, initialize the `Moment_of_light` class with a cleaned image and binary segmentation mask:
 
 .. code-block:: python
 
-    from mex.Metrics_module import Moment_of_light
+    from galmex.Metrics_module import Moment_of_light
 
     moment_calculator = Moment_of_light(clean_mini, segmentation=segmented_mini)
 
@@ -52,11 +52,11 @@ Shannon Entropy
 
 The Shannon entropy measures the uniformity or randomness of the light distribution in a galaxy image. It is based on the histogram of pixel intensities and is commonly used to quantify structural complexity and disorder. Higher entropy values indicate more uniform intensity distributions, while lower values correspond to more ordered, concentrated profiles.
 
-To compute the entropy, initialize the :class:`mex.Metrics_module.Shannon_entropy` class with the cleaned galaxy image and the corresponding segmentation mask:
+To compute the entropy, initialize the :class:`galmex.Metrics_module.Shannon_entropy` class with the cleaned galaxy image and the corresponding segmentation mask:
 
 .. code-block:: python
 
-    from mex.Metrics_module import Shannon_entropy
+    from galmex.Metrics_module import Shannon_entropy
 
     entropy_calculator = Shannon_entropy(
         clean_mini,
@@ -82,11 +82,11 @@ Gini Index
 
 The Gini index quantifies the inequality in the light distribution of a galaxy. A higher Gini value implies that the light is concentrated in a few pixels (e.g., compact sources), whereas lower values reflect more uniform light distributions (e.g., diffuse galaxies). It is based on the Lorentz curve and is often used in combination with M20 to classify galaxy morphology.
 
-To compute the index, initialize the :class:`mex.Metrics_module.Gini_index` class:
+To compute the index, initialize the :class:`galmex.Metrics_module.Gini_index` class:
 
 .. code-block:: python
 
-    from mex.Metrics_module import Gini_index
+    from galmex.Metrics_module import Gini_index
 
     gini_calculator = Gini_index(
         clean_mini,
@@ -120,11 +120,11 @@ The G2 index is a morphological metric derived from **Gradient Pattern Analysis 
 
 The analysis is based on the symmetry of vector pairs within the gradient field. G2 increases with asymmetry and is particularly sensitive to distortions in shape or internal structure.
 
-To use this metric, instantiate the :class:`mex.Metrics_module.GPA` class with an image and an optional segmentation mask:
+To use this metric, instantiate the :class:`galmex.Metrics_module.GPA` class with an image and an optional segmentation mask:
 
 .. code-block:: python
 
-    from mex.Metrics_module import GPA
+    from galmex.Metrics_module import GPA
 
     gpa = GPA(
         image=clean_mini,

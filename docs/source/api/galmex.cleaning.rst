@@ -1,7 +1,7 @@
-mex.cleaning module
+galmex.cleaning module
 ===================
 
-.. automodule:: mex.cleaning
+.. automodule:: galmex.cleaning
    :members:
    :show-inheritance:
    :undoc-members:

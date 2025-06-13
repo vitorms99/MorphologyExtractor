@@ -1,8 +1,8 @@
-# MEx: Morphology Extractor
+# GalMEx: Galaxy Morphology Extractor
 
-**MEx (Morphology Extractor)** is a Python package for robust, modular, and reproducible measurement of non-parametric galaxy morphology indicators. It includes implementations of the CAS and MEGG systems, along with complete image preprocessing, segmentation, and light profile analysis tools.
+**GalMEx (Galaxy Morphology Extractor)** is a Python package for robust, modular, and reproducible measurement of non-parametric galaxy morphology indicators. It includes implementations of the CAS and MEGG systems, along with complete image preprocessing, segmentation, and light profile analysis tools.
 
-Now available as a command-line tool (`mex`) and a graphical interface (GUI).
+Now available as a command-line tool (`galmex`) and a graphical interface (GUI).
 
 ---
 
@@ -11,15 +11,15 @@ Now available as a command-line tool (`mex`) and a graphical interface (GUI).
 You can install MEx from PyPI:
 
 ```bash
-pip install mex
+pip install galmex
 ```
 
 Alternatively, install the development version from GitHub:
 
 ```bash
-git clone https://github.com/vitorms99/MorphologyExtractor.git
-cd MorphologyExtractor
-pip install -e .
+git clone https://github.com/vitorms99/galmex.git
+cd galmex
+pip install .
 ```
 
 Make sure the `conda-forge` channel is active if using conda:
@@ -35,20 +35,20 @@ conda config --set channel_priority strict
 
 ### ✅ Graphical User Interface (GUI)
 
-To launch the MEx GUI:
+To launch the GalMEx GUI:
 
 ```bash
-mex
+galmex
 ```
 
 Without any arguments, MEx will open the graphical interface for interactive configuration, inspection, and processing.
 
 ### ✅ Command Line Interface (CLI)
 
-You can also run MEx from the command line using a config file:
+You can also run GalMEx from the command line using a config file:
 
 ```bash
-mex path/to/config.json
+galmex path/to/config.json
 ```
 
 - If the specified CSV output file exists, you'll be asked whether to overwrite or rename.
@@ -74,7 +74,7 @@ mex path/to/config.json
 ## 📄 Code Example
 
 ```python
-from mex.Background_module import BackgroundEstimator
+from galmex.Background_module import BackgroundEstimator
 
 bkg = BackgroundEstimator("galaxy001", image)
 bkg_median, bkg_std, bkg_map, img_clean = bkg.background_from_config({

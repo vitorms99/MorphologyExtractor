@@ -1,0 +1,3 @@
+include galmex/cleaning.pyx
+include galmex/cleaning.c
+include galmex/cleaning.cpython-*.so

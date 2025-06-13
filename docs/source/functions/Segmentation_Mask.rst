@@ -5,7 +5,7 @@ Defining what pixels belong to a given galaxy can directly influence the non-par
 
 .. code-block:: python
 
-   from mex.Segmentation_module import SegmentImage
+   from galmex.Segmentation_module import SegmentImage
    segm = SegmentImage(galaxy_clean_iso, sep_segmentation, rp, x, y, a, b, theta)
 
 Segmentation from SEP/SExtractor

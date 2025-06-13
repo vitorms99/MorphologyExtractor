@@ -1,7 +1,7 @@
-mex.Flagging\_module module
+galmex.Flagging\_module module
 ===========================
 
-.. automodule:: mex.Flagging_module
+.. automodule:: galmex.Flagging_module
    :members:
    :show-inheritance:
    :undoc-members:

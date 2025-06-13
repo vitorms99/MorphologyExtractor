@@ -1,7 +1,7 @@
-mex.Background\_module module
+galmex.Background\_module module
 =============================
 
-.. automodule:: mex.Background_module
+.. automodule:: galmex.Background_module
    :members:
    :show-inheritance:
    :undoc-members:

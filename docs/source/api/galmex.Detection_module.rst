@@ -1,7 +1,7 @@
-mex.Detection\_module module
+galmex.Detection\_module module
 ============================
 
-.. automodule:: mex.Detection_module
+.. automodule:: galmex.Detection_module
    :members:
    :show-inheritance:
    :undoc-members:

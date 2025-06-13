@@ -1,7 +1,7 @@
-mex.Petrosian\_module module
+galmex.Petrosian\_module module
 ============================
 
-.. automodule:: mex.Petrosian_module
+.. automodule:: galmex.Petrosian_module
    :members:
    :show-inheritance:
    :undoc-members:

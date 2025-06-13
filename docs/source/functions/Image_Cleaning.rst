@@ -11,7 +11,7 @@ This class receives the galaxy image and its corresponding segmentation map. Upo
 
 .. code-block:: python
 
-   from mex.Cleaning_module import GalaxyCleaner
+   from galmex.Cleaning_module import GalaxyCleaner
    cleaner = GalaxyCleaner(galaxy_image, segmentation_map)
 
 Flat filler

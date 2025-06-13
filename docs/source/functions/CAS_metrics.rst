@@ -3,17 +3,17 @@ CAS Metrics
 
 The **CAS system** — standing for **Concentration (C)**, **Asymmetry (A)**, and **Smoothness (S)** — is one of the most widely used non-parametric methods to quantify galaxy morphology. Originally proposed by Conselice (2003), it offers a straightforward way to relate the structural appearance of galaxies to their formation and evolutionary stages.
 
-This section describes how the `mex` package implements these three indices, offering flexibility to reproduce canonical definitions as well as to test alternative variants.
+This section describes how the `galmex` package implements these three indices, offering flexibility to reproduce canonical definitions as well as to test alternative variants.
 
 Each metric is implemented as a dedicated Python class:
 
-- :class:`mex.Metrics_module.Concentration`  
+- :class:`galmex.Metrics_module.Concentration`  
   Computes the concentration index based on radial light profiles using elliptical or circular apertures.
 
-- :class:`mex.Metrics_module.Asymmetry`  
+- :class:`galmex.Metrics_module.Asymmetry`  
   Estimates the rotational asymmetry of a galaxy, following Conselice (2003) and additional formulations such as Sampaio and Barchi et al.
 
-- :class:`mex.Metrics_module.Smoothness`  
+- :class:`galmex.Metrics_module.Smoothness`  
   Measures the small-scale structures in galaxies by comparing the original image with a smoothed version, optionally corrected for noise.
 
 All three classes follow a similar pattern: they are initialized with the necessary data (typically the image and optional segmentation or noise arrays), and expose functions to compute the respective metrics with different parameterizations.
@@ -35,7 +35,7 @@ Concentration is one of the metrics in the CAS system. It quantifies how light i
 
 .. code-block:: python
 
-    from mex.Metrics_module import Concentration
+    from galmex.Metrics_module import Concentration
 
     conc = Concentration(galaxy_clean_iso)
 
@@ -138,13 +138,13 @@ You can generate a visual check of the light profile to validate the radii and i
 Asymmetry
 ---------
 
-Asymmetry is one of the most commonly used non-parametric morphological indices in the literature, particularly for identifying merger candidates. It quantifies the difference between a galaxy and its rotated counterpart (typically by 180°). The `mex` package implements asymmetry via a dedicated class, `Asymmetry`, which supports various definitions including Conselice (2003), Sampaio (in prep), and Barchi et al. (2020).
+Asymmetry is one of the most commonly used non-parametric morphological indices in the literature, particularly for identifying merger candidates. It quantifies the difference between a galaxy and its rotated counterpart (typically by 180°). The `galmex` package implements asymmetry via a dedicated class, `Asymmetry`, which supports various definitions including Conselice (2003), Sampaio (in prep), and Barchi et al. (2020).
 
 To instantiate the class:
 
 .. code-block:: python
 
-    from mex.Metrics_module import Asymmetry
+    from galmex.Metrics_module import Asymmetry
 
     asymmetry_calculator = Asymmetry(
         clean_mini,
@@ -238,7 +238,7 @@ To initialize the class, provide the cleaned image, segmentation mask, an option
 
 .. code-block:: python
 
-    from mex.Metrics_module import Smoothness
+    from galmex.Metrics_module import Smoothness
 
     smoothness_calculator = Smoothness(
         clean_mini,

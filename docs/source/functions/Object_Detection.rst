@@ -10,7 +10,7 @@ Just like the background estimator class, the detector receives the object ident
 
 .. code-block:: python
 
-   from mex.Detection_module import ObjectDetector
+   from galmex.Detection_module import ObjectDetector
            
 
 SExtractor detection

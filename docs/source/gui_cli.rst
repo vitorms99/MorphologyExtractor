@@ -1,7 +1,7 @@
 Using the GUI and CLI
 =====================
 
-MEx (Morphology Extractor) can be used through two user-friendly interfaces:
+GalMEx can be used through two user-friendly interfaces:
 
 - **Graphical User Interface (GUI)**: for interactive visual configuration
 - **Command-Line Interface (CLI)**: for automated or batch processing
@@ -17,7 +17,7 @@ The GUI is the default interface. Simply type:
 
 .. code-block:: bash
 
-   mex
+   galmex
 
 This will open a graphical window where you can:
 
@@ -29,11 +29,11 @@ This will open a graphical window where you can:
 Using the CLI
 -------------
 
-To run MEx non-interactively using a configuration file:
+To run GalMEx non-interactively using a configuration file:
 
 .. code-block:: bash
 
-   mex path/to/config.json
+   galmex path/to/config.json
 
 You will be prompted before overwriting existing output files. All results and logs are saved automatically.
 
@@ -72,10 +72,10 @@ Comparison Table
      - Command
      - Use Case
    * - GUI
-     - ``mex``
+     - ``galmex``
      - Visual config, exploratory analysis, parameter tuning
    * - CLI
-     - ``mex config.json``
+     - ``galmex config.json``
      - Batch processing, automation, reproducibility
 
 

@@ -8,7 +8,7 @@ This function receives only an identifier (galaxy_name) and the galaxy image. Al
 
 .. code-block:: python
 
-   from mex.Background_module import BackgroundEstimator
+   from galmex.Background_module import BackgroundEstimator
    galaxy_name = '588848901526257813'
    bkg_estimator = BackgroundEstimator(galaxy_name, galaxy_image)
            

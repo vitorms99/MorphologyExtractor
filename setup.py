@@ -5,8 +5,8 @@ import numpy
 ext_modules = cythonize(
     [
         Extension(
-            name="mex.cleaning",  # or "mex.cleaning", make sure it matches your actual package
-            sources=["mex/cleaning.pyx"],
+            name="galmex.cleaning",  # or "galmex.cleaning", make sure it matches your actual package
+            sources=["galmex/cleaning.pyx"],
             include_dirs=[numpy.get_include()],
         )
     ],
@@ -26,7 +26,7 @@ ext_modules = cythonize(
 )
 
 setup(
-    name="mex",
+    name="galmex",
     version="0.1.0",
     description="Python package for measuring non-parametric morphological indices of galaxies",
     author="V. M. Sampaio",
@@ -34,8 +34,8 @@ setup(
     license="MIT",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/your_username/mex",
-    packages=find_packages(include=["mex", "mex.*"]),
+    url="https://github.com/vitorms99/galmex",
+    packages=find_packages(include=["galmex", "galmex.*"]),
     setup_requires=["Cython", "numpy"],
 install_requires=[
     "numpy",
@@ -55,13 +55,13 @@ install_requires=[
     },
     entry_points={
     'console_scripts': [
-        'mex = mex.__main__:main',
+        'galmex = galmex.__main__:main',
     ],
     },
     python_requires=">=3.8",
     include_package_data=True,
     package_data={
-        "mex": ["examples/*"],
+        "galmex": ["examples/*"],
     },
     classifiers=[
         "Development Status :: 4 - Beta",

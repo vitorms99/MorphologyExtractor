@@ -1,7 +1,7 @@
-mex.Utils\_module module
+galmex.Utils\_module module
 ========================
 
-.. automodule:: mex.Utils_module
+.. automodule:: galmex.Utils_module
    :members:
    :show-inheritance:
    :undoc-members:

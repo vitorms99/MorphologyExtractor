@@ -8,10 +8,10 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../../'))  # adjust path to your `mex` folder
+sys.path.insert(0, os.path.abspath('../../'))  # adjust path to your `galmex` folder
 
 
-project = 'Morphology Extractor'
+project = 'Galaxy Morphology Extractor'
 copyright = '2025, Vitor M. Sampaio'
 author = 'Vitor M. Sampaio'
 release = '0.1.0'

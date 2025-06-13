@@ -1,7 +1,7 @@
-mex.Segmentation\_module module
+galmex.Segmentation\_module module
 ===============================
 
-.. automodule:: mex.Segmentation_module
+.. automodule:: galmex.Segmentation_module
    :members:
    :show-inheritance:
    :undoc-members:

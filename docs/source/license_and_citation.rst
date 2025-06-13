@@ -4,7 +4,7 @@ License and Citation
 License
 -------
 
-The Morphology Extractor (MEx) package is released under the MIT License, a permissive open-source license that allows reuse with attribution.
+The Galaxy Morphology Extractor (GalMEx) package is released under the MIT License, a permissive open-source license that allows reuse with attribution.
 
 In addition to MEx, this package depends on several open-source tools and libraries:
 
@@ -25,7 +25,7 @@ We thank the authors of these packages for making their work openly available.
 Citation
 --------
 
-If you use MEx in a publication, please cite:
+If you use GalMEx in a publication, please cite:
 
 - **Kolesnikov et al. (2024, 2025)** – the first reference where MEx was applied.
 
@@ -33,7 +33,7 @@ If you use MEx in a publication, please cite:
   (*A Zenodo DOI will be provided upon software publication.*)
 
 
-In addition, please cite the original works that MEx builds upon:
+In addition, please cite the original works that GalMEx builds upon:
 
 - Barbary (2016), *SEP: Source Extractor in Python*, DOI: [10.5281/zenodo.159035](https://doi.org/10.5281/zenodo.159035)
 - Bertin & Arnouts (1996), *SExtractor: Software for source extraction*, A&AS, 117, 393

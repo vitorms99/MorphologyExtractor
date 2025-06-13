@@ -1,7 +1,7 @@
-mex.Metrics\_module module
+galmex.Metrics\_module module
 ==========================
 
-.. automodule:: mex.Metrics_module
+.. automodule:: galmex.Metrics_module
    :members:
    :show-inheritance:
    :undoc-members:

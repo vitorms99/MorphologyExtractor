@@ -1,4 +1,4 @@
-from mex.MEx_runner import main
+from galmex.galmex_runner import main
 
 if __name__ == "__main__":
     main()

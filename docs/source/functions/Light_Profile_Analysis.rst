@@ -8,7 +8,7 @@ When analysing galaxies, an important feature is the Petrosian radius, which pro
 
 .. code-block:: python
 
-   from mex.Petrosian_module import PetrosianCalculator
+   from galmex.Petrosian_module import PetrosianCalculator
 
    x, y, a, b, theta, npix = sep_catalog.iloc[main_id - 1][['x', 'y', 'a', 'b', 'theta', 'npix']]
    rp_calc = PetrosianCalculator(galaxy_clean_iso, x, y, a, b, theta)

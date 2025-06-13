@@ -1,7 +1,7 @@
 Installation
 ============
 
-MEx (Morphology Extractor) is available as a Python package and can be installed via `pip` or cloned directly from GitHub for local development. It includes both a command-line interface (CLI) and a graphical user interface (GUI) via the `mex` command.
+GalMEx is available as a Python package and can be installed via `pip` or cloned directly from GitHub for local development. It includes both a command-line interface (CLI) and a graphical user interface (GUI) via the `galmex` command.
 
 .. contents::
    :local:
@@ -14,9 +14,9 @@ To install the latest released version from PyPI:
 
 .. code-block:: bash
 
-   pip install mex
+   pip install galmex
 
-This installs the `mex` command, which launches the tool in either GUI or CLI mode depending on how it's invoked.
+This installs the `galmex` command, which launches the tool in either GUI or CLI mode depending on how it's invoked.
 
 Installing from source
 ----------------------
@@ -25,28 +25,28 @@ To install the latest development version:
 
 .. code-block:: bash
 
-   git clone https://github.com/vitorms99/MorphologyExtractor.git
-   cd MorphologyExtractor
+   git clone https://github.com/vitorms99/galmex.git
+   cd galmex
    pip install -e .
 
-This installs MEx in *editable mode*, meaning local changes to the code are immediately reflected.
+This installs GalMex in *editable mode*, meaning local changes to the code are immediately reflected.
 
 Usage Modes
 -----------
 
-After installation, MEx can be launched in two main ways:
+After installation, GalMEx can be launched in two main ways:
 
 **GUI mode (default):**
 
 .. code-block:: bash
 
-   mex
+   galmex
 
 **CLI mode using a config file:**
 
 .. code-block:: bash
 
-   mex path/to/config.json
+   galmex path/to/config.json
 
 You will be prompted before overwriting any existing output file. Logs and results are saved automatically.
 
