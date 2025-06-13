@@ -8,7 +8,7 @@ Now available as a command-line tool (`galmex`) and a graphical interface (GUI).
 
 ## 🚀 Installation
 
-You can install MEx from PyPI:
+You can install GalMEx from PyPI:
 
 ```bash
 pip install galmex
@@ -41,7 +41,7 @@ To launch the GalMEx GUI:
 galmex
 ```
 
-Without any arguments, MEx will open the graphical interface for interactive configuration, inspection, and processing.
+Without any arguments, GalMEx will open the graphical interface for interactive configuration, inspection, and processing.
 
 ### ✅ Command Line Interface (CLI)
 
@@ -112,14 +112,14 @@ alias sex='path/to/sextractor'
 
 ## 📚 Documentation
 
-- Full user manual (`MorphologyExtractor_Manual.pdf`) included
+- Full user manual (`GalMEx_Manual.pdf`) included
 - Describes all classes, input parameters, example figures
 
 ---
 
 ## 🔗 Repository
 
-📁 GitHub: [https://github.com/vitorms99/MorphologyExtractor](https://github.com/vitorms99/MorphologyExtractor)
+📁 GitHub: [https://github.com/vitorms99/GalMEx](https://github.com/vitorms99/MorphologyExtractor)
 
 ---
 
