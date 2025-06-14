@@ -6,7 +6,7 @@ License
 
 The Galaxy Morphology Extractor (GalMEx) package is released under the MIT License, a permissive open-source license that allows reuse with attribution.
 
-In addition to MEx, this package depends on several open-source tools and libraries:
+In addition to GalMEx, this package depends on several open-source tools and libraries:
 
 - **SEP** (Source Extractor in Python) – LGPL License  
   - Based on: *Bertin & Arnouts 1996*  
