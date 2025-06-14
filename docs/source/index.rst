@@ -8,9 +8,6 @@
 Galaxy Morphology Extractor (GalMEx)
 
 ====================================
-.. image:: https://readthedocs.org/projects/morphologyextractor/badge/?version=latest
-   :target: https://galmex.readthedocs.io/en/latest/?badge=latest
-   :alt: Documentation Status
    
 **Galaxy Morphology Extractor (GalMEx)** is an open-source, modular Python package designed for the extraction of non-parametric morphological indices from galaxy images. It provides a reproducible and transparent framework for analyzing galaxy structure across surveys and redshifts, without relying on visual classifications or rigid parametric models.
 
