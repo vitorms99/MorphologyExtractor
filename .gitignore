@@ -5,7 +5,6 @@ __pycache__/
 
 # Jupyter/IPython checkpoints
 .ipynb_checkpoints/
-
 # macOS hidden files
 .DS_Store
 
