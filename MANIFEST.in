@@ -3,3 +3,4 @@ include galmex/cleaning.c
 include galmex/cleaning.cpython-*.so
 include galmex/Azure-ttk-theme/azure.tcl
 recursive-include galmex/Azure-ttk-theme/theme *
+galmex/include manual.pdf

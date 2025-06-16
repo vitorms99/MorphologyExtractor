@@ -65,6 +65,7 @@ install_requires=[
             "examples/*",
             "Azure-ttk-theme/azure.tcl",
             "Azure-ttk-theme/theme/*",
+            "manual.pdf",
             ],
     },    
     classifiers=[
