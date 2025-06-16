@@ -17,6 +17,7 @@ import time
 import sys
 from tqdm import tqdm
 import argparse
+import importlib.resources
 from datetime import timedelta,datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from astropy.io import fits
@@ -1149,13 +1150,18 @@ class App(tk.Tk):
         self.title("Galaxy Morphology Extractor")
         self.geometry("1200x1200")
         self.resizable(True, True)
+        # Try to load the Azure theme
+        try:
+            with importlib.resources.path("galmex.Azure-ttk-theme", "azure.tcl") as theme_path:
+                self.tk.call("source", str(theme_path))
+                self.tk.call("set_theme", "light")
+        except Exception as e:
+            print(f"[WARNING] Failed to load Azure theme: {e}")
+            print("[INFO] Falling back to default Tkinter style.")
 
-        # Apply Azure theme
-        self.tk.call("source", "galmex/Azure-ttk-theme/azure.tcl")
-        self.tk.call("set_theme", "light")
+        # Set style configuration regardless of theme
         self.style = ttk.Style()
         self.style.configure("TNotebook.Tab", font=("Arial", 18, "bold"))
-
         self.style.configure("Vertical.TScrollbar",
                              background="gray25",
                              troughcolor="gray10",
