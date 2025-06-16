@@ -27,7 +27,7 @@ ext_modules = cythonize(
 
 setup(
     name="galmex",
-    version="1.0.3",
+    version="1.0.4",
     description="Python package for measuring non-parametric morphological indices of galaxies",
     author="V. M. Sampaio",
     author_email="vitorms999@gmail.com",
@@ -61,8 +61,12 @@ install_requires=[
     python_requires=">=3.8",
     include_package_data=True,
     package_data={
-        "galmex": ["examples/*"],
-    },
+        "galmex": [
+            "examples/*",
+            "Azure-ttk-theme/azure.tcl",
+            "Azure-ttk-theme/theme/*",
+            ],
+    },    
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",

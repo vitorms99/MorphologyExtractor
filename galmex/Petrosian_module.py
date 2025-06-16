@@ -32,7 +32,7 @@ class PetrosianCalculator:
     """
     Class to calculate the Petrosian radius for a galaxy.
     """
-    def __init__(self, galaxy_image, x, y, a, b, theta):
+    def __init__(self, image, x, y, a, b, theta):
         """Initialize the PetrosianCalculator.
 
         Parameters
@@ -46,7 +46,7 @@ class PetrosianCalculator:
         theta : float
             Ellipticity angle (radians).
         """
-        self.galaxy_image = galaxy_image
+        self.image = image
         self.x = x
         self.y = y
         self.a = a
@@ -71,7 +71,7 @@ class PetrosianCalculator:
             Array of aperture scales.
         """
         scalemin = max(1 / a, 0)
-        scalemax = min(int(0.5 * len(self.galaxy_image[0]) / a), len(self.galaxy_image) / 2)
+        scalemax = min(int(0.5 * len(self.image[0]) / a), len(self.image) / 2)
         return np.arange(scalemin, scalemax, rp_step)
 
     def calculate_petrosian_radius(self, rp_thresh = 0.2, aperture = "elliptical", optimize_rp = True,
@@ -211,9 +211,9 @@ class PetrosianCalculator:
         tuple
             Numerator, denominator, eta value, radius, and flux3 (growth curve value).
         """
-        flux1, _, _ = sep.sum_ellipse(self.galaxy_image, [x], [y], [0.8 * s * a], [0.8 * s * b], [theta], subpix=100)
-        flux2, _, _ = sep.sum_ellipse(self.galaxy_image, [x], [y], [1.25 * s * a], [1.25 * s * b], [theta], subpix=100)
-        flux3, _, _ = sep.sum_ellipse(self.galaxy_image, [x], [y], [s * a], [s * b], [theta], subpix=100)
+        flux1, _, _ = sep.sum_ellipse(self.image, [x], [y], [0.8 * s * a], [0.8 * s * b], [theta], subpix=100)
+        flux2, _, _ = sep.sum_ellipse(self.image, [x], [y], [1.25 * s * a], [1.25 * s * b], [theta], subpix=100)
+        flux3, _, _ = sep.sum_ellipse(self.image, [x], [y], [s * a], [s * b], [theta], subpix=100)
 
         i_flux = flux2 - flux1
         a1, a2, a3 = np.pi * (0.8 * s * a) * (0.8 * s * b), np.pi * (1.25 * s * a) * (1.25 * s * b), np.pi * (s * a) * (s * b)
@@ -280,7 +280,7 @@ class PetrosianCalculator:
 
         # Compute cumulative flux directly with SEP
         flux_values, _, _ = sep.sum_ellipse(
-                                            self.galaxy_image,
+                                            self.image,
                                             [self.x], [self.y],
                                             sma_values,
                                             b_values,
@@ -294,4 +294,31 @@ class PetrosianCalculator:
         Re = np.interp(fraction * total_flux, flux_values, sma_values)
         return Re, flux_values, sma_values
 
+    def get_kron_radius(self, rmax=None):
+        """
+        Manually compute the Kron radius within an elliptical aperture.
+
+        Parameters
+        ----------
+        rmax : float, optional
+            Maximum elliptical radius to consider (default: 8a).
+
+        Returns
+        -------
+        r_kron : float
+            Kron radius
+        """
+        if rmax is None:
+            rmax = 8 * self.a
+        ny, nx = self.image.shape
+        Y, X = np.mgrid[0:ny, 0:nx]
+        dx, dy = X - self.x, Y - self.y
+        cos_t, sin_t = np.cos(self.theta), np.sin(self.theta)
+        x_p = dx * cos_t + dy * sin_t
+        y_p = -dx * sin_t + dy * cos_t
+        r_ellip = np.sqrt((x_p / self.a)**2 + (y_p / self.b)**2)
+        mask = r_ellip <= (rmax / self.a)
+        I = self.image[mask]
+        r = r_ellip[mask] * self.a  # Convert elliptical radius to pixel units
+        return np.sum(r * I) / np.sum(I) if np.sum(I) > 0 else np.nan
 
