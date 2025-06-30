@@ -349,9 +349,10 @@ def _flatten_dict(d, parent_key='', sep='.'):
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
+            items.extend(_flatten_dict(v, new_key, sep=sep).items())
         else:
             items.append((new_key, v))
+            
     return dict(items)
 
 
@@ -543,18 +544,21 @@ def _merge_configs(default_config, user_config):
 
 def remove_central_region(image, remove_radius, xc, yc):
     """
-    Removes the central part of an ellipse from a segmentation image.
+    Removes a circular region centered at ``(xc, yc)`` from a segmentation image.
 
     Parameters:
     ----------
     image : np.ndarray
         The segmentation image.
-    remove_pixels : float
-        The semi-major axis of the ellipse.
+        remove_radius : float
+        Radius of the circular region, in pixels, that will be set to zero.
+    xc, yc : float
+        Coordinates of the center of the region to remove.
+    
     Returns:
     -------
     image_segmented : np.ndarray
-        The updated segmentation image with the central ellipse removed.
+        The updated segmentation image with the central region removed.
     """
     # Copy the image
     image_copy = np.copy(image)

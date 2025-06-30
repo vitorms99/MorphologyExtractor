@@ -1,9 +1,9 @@
 {
     "initial_settings": {
         "cutout_folder": "/home/vitorms/Dropbox/galmex/Examples/test_galaxies",
-        "output_file": "results.csv",
+        "output_file": "results_1.csv",
         "output_folder": "/home/vitorms/Dropbox/galmex/Examples",
-        "cores": 15,
+        "cores": 1,
         "hdu": 0,
         "estimate_uncertainty": false,
         "nsim": 10,

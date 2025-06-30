@@ -15,6 +15,7 @@ from scipy.signal import windows
 from astropy.convolution import Gaussian2DKernel, Box2DKernel, Tophat2DKernel 
 from math import floor, sqrt
 from scipy.ndimage import sobel
+from photutils.aperture import EllipticalAperture, CircularAperture
 import copy
 import warnings
 import matplotlib.pyplot as plt
@@ -63,25 +64,24 @@ class Concentration:
             rmax = 8 * self.a
 
         major = np.arange(1, round(rmax), sampling_step)
-        minor = major * self.b / self.a
+        fluxes = []
+        for sma in major:
+            aperture = CircularAperture((self.x, self.y), r=sma)
+            try:
+                flux = aperture.do_photometry(self.image, method='exact')[0][0]
+            except Exception:
+                flux = 0.0
+            fluxes.append(flux)
 
-        acc, acc_err, flags = sep.sum_ellipse(
-                                              self.image,
-                                              np.full(len(major), self.x),
-                                              np.full(len(major), self.y),
-                                              major, minor, np.full(len(major), self.theta),
-                                              gain=1, subpix=100
-                                              )
-
-        normalized_acc = acc / np.max(acc)
-        normalized_acc_err = acc_err / np.max(acc)
-
-        return major, normalized_acc, normalized_acc_err
-
+        fluxes = np.array(fluxes)
+        normalized_acc = fluxes / np.max(fluxes) if np.max(fluxes) > 0 else fluxes
+        
+        return major, normalized_acc
+    
     def get_radius(self, radius=None, curve=None, fraction=0.5, Naround=2, interp_order=3, rmax=None, sampling_step=1):
         
         if radius is None or curve is None:
-            radius, curve, _ = self.get_growth_curve(rmax=rmax, sampling_step=sampling_step)
+            radius, curve = self.get_growth_curve(rmax=rmax, sampling_step=sampling_step)
 
         idx = np.argmin(np.abs(curve - fraction))
         imin = max(idx - Naround, 0)
@@ -95,7 +95,7 @@ class Concentration:
 
     def get_concentration(self, method="ferrari", f_inner=0.2, f_outter=0.8,
                           rmax=None, sampling_step=1, Naround=2, interp_order=3):
-        radius, curve, _ = self.get_growth_curve(rmax, sampling_step)
+        radius, curve = self.get_growth_curve(rmax, sampling_step)
         rinner = self.get_radius(radius, curve, f_inner, Naround, interp_order)
         routter = self.get_radius(radius, curve, f_outter, Naround, interp_order)
         ratio = routter / rinner
@@ -195,9 +195,8 @@ class Gini_index:
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
+        
+        self.segmentation = (self.segmentation > 0).astype(int)
         
     
         
@@ -343,9 +342,8 @@ class Moment_of_light:
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
+        self.segmentation = (self.segmentation > 0).astype(int)
+    
     def _find_minimum_moment_center(self, x0=None, y0=None, max_iter=100):
         """
         Brute-force 3x3 descent to minimize total second-order moment.
@@ -566,9 +564,8 @@ class Shannon_entropy:
         self.segmentation = segmentation
         if self.segmentation.shape != self.image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
+        
+        self.segmentation = (self.segmentation > 0).astype(int)
         
         self.results = {}    
     def get_entropy(self, normalize = True, nbins = 1):
@@ -700,9 +697,7 @@ class Asymmetry:
         self.segmentation = segmentation if segmentation is not None else np.ones_like(image,dtype=int)
         if self.segmentation.shape != self.image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
+        self.segmentation = (self.segmentation > 0).astype(int)
 
         self.noise = noise
         self.angle = angle
@@ -716,25 +711,60 @@ class Asymmetry:
         if not isinstance(angle, (float, int)):
             raise ValueError("Invalid angle value. Must be float or int.")
             
-    def _rotate(self, array, center=None):
+    def _rotate(self, array, center=None, order=3):
+        """
+        Rotate a 2D array around a specified center using interpolation.
+        Uses np.rot90 for exact 90°/180°/270° rotations around the image center.
+    
+        Parameters
+        ----------
+        array : ndarray
+            2D array to rotate.
+        center : tuple or None
+            (y, x) center of rotation. If None, uses image center.
+        order : int
+            Interpolation order (default: 3). Ignored if using np.rot90.
+    
+        Returns
+        -------
+        rotated : ndarray
+            Rotated version of the input array.
+        """
+        # Compute default center
         if center is None:
-            if self.angle % 360 == 180:
-                return np.rot90(array, 2)
-            return rotate_ndimage(array, angle=self.angle, reshape=False, order=3)
+            cy, cx = np.array(array.shape) / 2.0
         else:
             cy, cx = center
             if cy is None or cx is None:
                 return np.zeros_like(array)
-            shift_y = array.shape[0] / 2 - cy
-            shift_x = array.shape[1] / 2 - cx
-            shifted = shift(array, shift=(shift_y, shift_x), order=3, mode='nearest')
-            rotated = rotate_ndimage(shifted, angle=self.angle, reshape=False, order=3, mode='nearest')
-            unshifted = shift(rotated, shift=(-shift_y, -shift_x), order=3, mode='nearest')
-            return unshifted
-
-    def get_conselice_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50):
+    
+        # If angle is exact multiple of 90 and center matches image center
+        angle_mod = self.angle % 360
+        yc, xc = np.array(array.shape) / 2.0
+            
+        if np.allclose([cy, cx], [yc, xc], atol=0.5):
+            if angle_mod == 0:
+                return array.copy()
+            elif angle_mod == 90:
+                return np.rot90(array, k=1)
+            elif angle_mod == 180:
+                return np.rot90(array, k=2)
+            elif angle_mod == 270:
+                return np.rot90(array, k=3)
+    
+        # General case: shift → rotate → unshift with interpolation
+        shift_y = array.shape[0] / 2.0 - cy
+        shift_x = array.shape[1] / 2.0 - cx
+    
+        shifted = shift(array, shift=(shift_y, shift_x), order=order, mode='nearest')
+        rotated = rotate_ndimage(shifted, angle=self.angle, reshape=False, order=order, mode='nearest')
+        unshifted = shift(rotated, shift=(-shift_y, -shift_x), order=order, mode='nearest')
+    
+        return unshifted    
+        
+    def get_conselice_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50, minimize=True, xr=None, yr=None):
         """
-        Compute Conselice-style asymmetry with iterative center minimization.
+        Compute Conselice-style asymmetry with optional iterative center minimization.
 
         Parameters
         ----------
@@ -744,6 +774,10 @@ class Asymmetry:
             Pixel overlap mode ('equal' or 'simple').
         max_iter : int
             Maximum number of iterations for center optimization.
+        minimize : bool
+            Whether to perform iterative center minimization (default: True).
+        xr, yr : float or None
+            Optional initial center (column, row). If None, uses image center.
 
         Returns
         -------
@@ -762,68 +796,75 @@ class Asymmetry:
         niter_noise : int or None
             Iterations to converge on noise center.
         """
-        
+
         # --- Helper to evaluate asymmetry at a given center ---
         def asymmetry(I, center, method='absolute'):
             R = self._rotate(I, center)
             mask = self.segmentation.astype(bool)
-            maskR = self._rotate(mask.astype(float), center) > 0.5  # ensures boolean after interpolation
-    
+            maskR = self._rotate(mask.astype(float), center) > 0.5
+
             if pixel_comparison == 'equal':
                 valid = (mask & maskR) & np.isfinite(I) & np.isfinite(R)
             elif pixel_comparison == 'simple':
                 valid = (mask | maskR) & np.isfinite(I) & np.isfinite(R)
             else:
                 raise ValueError("pixel_comparison must be 'equal' or 'simple'")
-    
+
             if method == 'absolute':
                 num = np.sum(np.abs(I[valid] - R[valid]))
-                denom = 2 * np.sum(np.abs(self.image[valid]))  # always divide by original image flux
+                denom = 2 * np.sum(np.abs(self.image[valid]))
                 return num / denom if denom != 0 else np.nan
-    
             elif method == 'rms':
                 num = np.sum((I[valid] - R[valid])**2)
                 denom = 2 * np.sum((self.image[valid])**2)
                 return np.sqrt(num / denom) if denom != 0 else np.nan
-    
             else:
                 raise ValueError("Invalid method. Use 'absolute' or 'rms'.")
 
-        # --- Brute-force minimization ---
-        def minimize_asym(I, method):
-            yc, xc = np.array(self.image.shape) // 2
-            center = (yc, xc)
-    
+        # --- Minimization helper ---
+        def minimize_asym(I, method, center_start):
+            center = center_start
             for niter in range(max_iter):
                 y, x = center
                 candidates = [(y + dy, x + dx) for dy in [-1, 0, 1] for dx in [-1, 0, 1]]
                 values = [asymmetry(I, c, method) for c in candidates]
                 best_idx = np.nanargmin(values)
                 new_center = candidates[best_idx]
-    
                 if new_center == center:
                     break
                 center = new_center
-    
             best_value = asymmetry(I, center, method)
             return best_value, center, niter
 
-        # --- Galaxy term ---
-        A_gal, center_gal, niter_gal = minimize_asym(self.image.astype(float), method)
-    
-        # --- Noise term ---
+        # --- Initial center handling ---
+        yc, xc = np.array(self.image.shape) // 2
+        initial_center = (yr if yr is not None else yc, xr if xr is not None else xc)
+
+        # --- Galaxy asymmetry ---
+        if minimize:
+            A_gal, center_gal, niter_gal = minimize_asym(self.image.astype(float), method, initial_center)
+        else:
+            center_gal = initial_center
+            A_gal = asymmetry(self.image.astype(float), center_gal, method)
+            niter_gal = 0
+
+        # --- Noise asymmetry ---
         if self.noise is not None:
-            A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method)
+            if minimize:
+                A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method, initial_center)
+            else:
+                center_noise = initial_center
+                A_noise = asymmetry(self.noise.astype(float), center_noise, method)
+                niter_noise = 0
         else:
             A_noise = 0.0
             center_noise = (None, None)
             niter_noise = None
-    
-        A_total = A_gal - A_noise
-    
-        return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
 
-    def get_sampaio_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50):
+        A_total = A_gal - A_noise
+        return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
+        
+    def get_sampaio_asymmetry(self, method='absolute', pixel_comparison='equal', max_iter=50, minimize=True, xr=None, yr=None):
         """
         Compute pixel-wise normalized asymmetry as described in Sampaio et al.
 
@@ -835,19 +876,23 @@ class Asymmetry:
             'equal' or 'simple'.
         max_iter : int
             Maximum number of iterations for minimization.
+        minimize : bool
+            Whether to perform center minimization (default: True).
+        xr, yr : float or None
+            Optional fixed center (column, row). If None, uses image center.
 
         Returns
         -------
         A_total : float
-            Net asymmetry.
+            Net asymmetry (A_gal - A_noise).
         A_gal : float
             Galaxy-only asymmetry.
         A_noise : float
             Noise-only asymmetry.
         center_gal : tuple
-            Minimizing center for galaxy.
+            Minimizing or fixed center for galaxy.
         center_noise : tuple or None
-            Minimizing center for noise.
+            Minimizing or fixed center for noise.
         niter_gal : int
             Number of iterations to minimize galaxy term.
         niter_noise : int or None
@@ -873,46 +918,55 @@ class Asymmetry:
             N = len(ratio)
     
             if method == 'absolute':
-                return np.sum(np.abs(ratio))/(2*N)
+                return np.sum(np.abs(ratio)) / (2 * N)
             elif method == 'rms':
-                return np.sqrt(np.sum(ratio**2))/(2*N)
+                return np.sqrt(np.sum(ratio**2)) / (2 * N)
             else:
                 raise ValueError("Invalid method. Use 'absolute' or 'rms'.")
     
-        def minimize_asym(I, method):
-            yc, xc = np.array(self.image.shape) // 2
-            center = (yc, xc)
-    
+        def minimize_asym(I, method, center_start):
+            center = center_start
             for niter in range(max_iter):
                 y, x = center
                 candidates = [(y + dy, x + dx) for dy in [-1, 0, 1] for dx in [-1, 0, 1]]
                 values = [asymmetry(I, c, method) for c in candidates]
                 best_idx = np.nanargmin(values)
                 new_center = candidates[best_idx]
-    
                 if new_center == center:
                     break
                 center = new_center
-    
             best_value = asymmetry(I, center, method)
             return best_value, center, niter
     
-        # --- Galaxy term ---
-        A_gal, center_gal, niter_gal = minimize_asym(self.image.astype(float), method)
+        # --- Determine initial center ---
+        yc, xc = np.array(self.image.shape) // 2
+        initial_center = (yr if yr is not None else yc, xr if xr is not None else xc)
     
-        # --- Noise term ---
+        # --- Galaxy asymmetry ---
+        if minimize:
+            A_gal, center_gal, niter_gal = minimize_asym(self.image.astype(float), method, initial_center)
+        else:
+            center_gal = initial_center
+            A_gal = asymmetry(self.image.astype(float), center_gal, method)
+            niter_gal = 0
+    
+        # --- Noise asymmetry ---
         if self.noise is not None:
-            A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method)
+            if minimize:
+                A_noise, center_noise, niter_noise = minimize_asym(self.noise.astype(float), method, initial_center)
+            else:
+                center_noise = initial_center
+                A_noise = asymmetry(self.noise.astype(float), center_noise, method)
+                niter_noise = 0
         else:
             A_noise = 0.0
             center_noise = (None, None)
             niter_noise = None
     
         A_total = A_gal - A_noise
-    
         return A_total, A_gal, A_noise, center_gal, center_noise, niter_gal, niter_noise
-
-    def get_ferrari_asymmetry(self, corr_type='pearson', pixel_comparison='equal', max_iter=50):
+    
+    def get_ferrari_asymmetry(self, corr_type='pearson', pixel_comparison='equal', max_iter=50, minimize=True, xr=None, yr=None):
         """
         Compute Ferrari-style asymmetry: 1 - correlation.
 
@@ -921,9 +975,13 @@ class Asymmetry:
         corr_type : str
             Correlation type ('pearson' or 'spearman').
         pixel_comparison : str
-            Pixel alignment criteria.
+            Pixel alignment criteria ('equal' or 'simple').
         max_iter : int
             Iteration limit for brute-force center search.
+        minimize : bool
+            Whether to perform center minimization (default: True).
+        xr, yr : float or None
+            Optional initial center (column, row). If None, use image center.
 
         Returns
         -------
@@ -932,62 +990,68 @@ class Asymmetry:
         r : float
             Correlation coefficient.
         center : tuple
-            Optimized center.
+            Optimized or fixed center.
         niter : int
-            Number of iterations performed.
+            Number of iterations performed (0 if minimize=False).
         """
-    
+
         def correlation(center):
             I = self.image.astype(float)
             R = self._rotate(I, center)
             mask = self.segmentation.astype(bool)
             maskR = self._rotate(mask.astype(float), center) > 0.5
-    
+
             if pixel_comparison == 'equal':
                 valid = (mask & maskR) & np.isfinite(I) & np.isfinite(R)
             elif pixel_comparison == 'simple':
                 valid = (mask | maskR) & np.isfinite(I) & np.isfinite(R)
             else:
                 raise ValueError("pixel_comparison must be 'equal' or 'simple'")
-    
+
             I_flat = I[valid].flatten()
             R_flat = R[valid].flatten()
-    
+
             if len(I_flat) < 10:
-                return -99.0  # Too few valid pixels, treat as anti-correlation
-    
+                return -99.0  # Too few valid pixels — treat as anti-correlation
+
             if corr_type == 'pearson':
                 r, _ = pearsonr(I_flat, R_flat)
             elif corr_type == 'spearman':
                 r, _ = spearmanr(I_flat, R_flat)
             else:
                 raise ValueError("corr_type must be 'pearson' or 'spearman'")
-    
+
             return 0.0 if np.isnan(r) else r
-    
-        def minimize_corr():
-            yc, xc = np.array(self.image.shape) // 2
-            center = (yc, xc)
-    
+
+        def minimize_corr(center_start):
+            center = center_start
             for niter in range(max_iter):
                 y, x = center
                 candidates = [(y + dy, x + dx) for dy in [-1, 0, 1] for dx in [-1, 0, 1]]
                 values = [correlation(c) for c in candidates]
                 best_idx = np.nanargmax(values)
                 new_center = candidates[best_idx]
-    
                 if new_center == center:
                     break
                 center = new_center
-    
             r_best = correlation(center)
             return r_best, center, niter
-    
-        r_max, center, niter = minimize_corr()
-        A = 1 - r_max
-    
-        return A, r_max, center, niter
 
+        # --- Determine initial center ---
+        yc, xc = np.array(self.image.shape) // 2
+        initial_center = (yr if yr is not None else yc, xr if xr is not None else xc)
+
+        if minimize:
+            r_max, center, niter = minimize_corr(initial_center)
+        else:
+            center = initial_center
+            r_max = correlation(center)
+            niter = 0
+
+        A = 1 - r_max
+        return A, r_max, center, niter
+    
+    
     def plot_asymmetry_diagnostics(self, method='conselice'):
         if method == 'conselice':
             _, _, _, center_gal, _, _, _ = self.get_conselice_asymmetry()
@@ -1098,9 +1162,7 @@ class Smoothness:
         if segmentation.shape != image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
         
-        if not np.array_equal(np.unique(segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            segmentation = (segmentation > 0).astype(int)
+        segmentation = (segmentation > 0).astype(int)
         
         if not isinstance(smoothing_factor, (float, int)) or smoothing_factor < 0:
             raise ValueError("Invalid smoothing factor value. Must be float or int greater than zero.")
@@ -1341,117 +1403,9 @@ class GPA:
         self.segmentation = segmentation if segmentation is not None else np.ones_like(image, dtype=int)
         if self.segmentation.shape != self.image.shape:
             raise ValueError("Segmentation mask dimensions do not match the image dimensions.")
-        if not np.array_equal(np.unique(self.segmentation), [0, 1]):
-            warnings.warn("Segmentation mask is not binary. Converting to binary values.", UserWarning)
-            self.segmentation = (self.segmentation > 0).astype(int)
         
+        self.segmentation = (self.segmentation > 0).astype(int)
         
-    def gradient_fields(self, image, segmentation):
-        """
-        Compute gradient vectors and phase angles for the masked image.
-
-        Parameters
-        ----------
-        image : ndarray
-            Galaxy image.
-        segmentation : ndarray
-            Binary segmentation mask.
-
-        Returns
-        -------
-        grad_x : ndarray
-            Gradient in x direction.
-        grad_y : ndarray
-            Gradient in y direction.
-        modules : ndarray
-            Magnitude of gradient vectors.
-        phase : ndarray
-            Phase angle of gradient vectors (radians).
-        """
-
-        image_gpa = image * segmentation
-        image_gpa[segmentation == 0] = np.nan
-
-        
-        ### get gradient in x and y directions
-        grad_x, grad_y = np.gradient(image_gpa)
-        modules = np.sqrt(grad_x**2 + grad_y**2)
-        phase = np.arctan2(-grad_y, grad_x)  # Flip grad_y to adjust for Cartesian convention
-        
-        
-        return(grad_x, grad_y, modules, phase)
-    
-    
-    
-    def plot_gradient_field(self, mtol, ptol):
-        """
-        Visualize the original and asymmetric gradient fields.
-
-        Parameters
-        ----------
-        mtol : float
-            Tolerance threshold for gradient magnitude.
-        ptol : float
-            Tolerance threshold for phase angle.
-        """
-        
-        
-        grad_x, grad_y, gradient_a_x, gradient_a_y, _, _, _, _, _, _, _, _ = self._get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = mtol, ptol = ptol, remove_outliers = '')
-        
-        plt.figure(figsize = (12,6), dpi = 200)
-
-        plt.subplot(1,2,1)
-        plt.title("Original Gradient Field", fontsize = 20)
-        plt.quiver(grad_x, grad_y)
-        plt.xticks(fontsize = 16)
-        plt.yticks(fontsize = 16)
-        plt.xlabel("X-axis", fontsize = 18)
-        plt.ylabel("Y-axis", fontsize = 18)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, top = True, bottom = True)
-
-        plt.subplot(1,2,2)
-        plt.title("Asymmetric Gradient Field", fontsize = 20)
-        plt.quiver(gradient_a_x, gradient_a_y)
-        plt.xticks(fontsize = 16)
-        plt.yticks(fontsize = 16)
-        plt.xlabel("X-axis", fontsize = 18)
-        plt.ylabel("Y-axis", fontsize = 18)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, top = True, bottom = True)
-        
-       
-    
-    
-    def plot_hists(self):
-        """
-        Plot histograms of normalized gradient magnitudes and phase angles.
-        """
-
-        _, _, _, _, _, _, _, modules_normalized, _, phases, _, _ = self._get_ass_field(self.image, self.segmentation.astype(np.float32), mtol = 0, ptol = 0, remove_outliers = '')
-        
-        
-        plt.figure(figsize = (12,6), dpi = 200)
-        
-        plt.subplot(1,2,1)
-        plt.title("Modules", fontsize = 20)
-        plt.hist(modules_normalized.flatten(), histtype = 'step', lw = 2, color = 'b', bins = 20, density = True) 
-        plt.xticks(fontsize = 16)
-        plt.yticks(fontsize = 16)
-        plt.ylabel("Normalised Frequency", fontsize = 18)
-        plt.xlabel("Normalised Vector Module", fontsize = 18)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        
-        plt.subplot(1,2,2)
-        plt.title("Phases", fontsize = 20)
-        plt.hist(phases.flatten(), histtype = 'step', lw = 2, color = 'b', bins = 20, density = True) 
-        plt.xticks(fontsize = 16)
-        plt.yticks(fontsize = 16)
-        plt.ylabel("Normalised Frequency", fontsize = 18)
-        plt.xlabel("Vector Phase (Radians)", fontsize = 18)
-        plt.tick_params(direction = 'in', size = 7, left = True, right = True, bottom = True, top = True)
-        plt.subplots_adjust(wspace = 0.3, hspace = 0.3)
-        
-  ################################## KOLESNIKOV IMPLEMENTATION ################################
-
     def _compute_gradient_phases(self, dx, dy):
         # Compute the ratio
         ratio = dy / (dx + np.finfo(float).eps)
@@ -1493,21 +1447,6 @@ class GPA:
         phases[center_y:center_y+1, center_y+1:len(phases)] = phases[center_y:center_y+1, center_y+1:len(phases)] - 180# x:3,4, y:center_y
 
         return np.abs(phases)
-
-    def _add_disturbance(self, fixed_phases, disturbance):
-        height, width = fixed_phases.shape
-        center_x, center_y = int(width/2), int(height/2)
-
-        fixed_phases[center_y+1:len(fixed_phases), 0:center_x]                      += disturbance # 3
-        fixed_phases[center_y+1:len(fixed_phases), center_x+1:len(fixed_phases)]    -= disturbance # 4
-
-        fixed_phases[center_x+1:len(fixed_phases), center_x:center_x+1]             += disturbance # x:center_x, y:3,4
-        fixed_phases[0:center_x, center_x:center_x+1]                               += disturbance# x:center_x, y:0,1
-        fixed_phases[center_y:center_y+1, 0:center_y]                               += disturbance# x:1,2, y:center_y
-        fixed_phases[center_y:center_y+1, center_y+1:len(fixed_phases)]             += disturbance# x:3,4, y:center_y
-
-        return fixed_phases
-
 
     def _get_contour_count(self, image):
         # function that counts the contour pixels pixels
@@ -1617,7 +1556,7 @@ class GPA:
 
         gradient_x_segmented = gradient_x * full_mask
         gradient_y_segmented = gradient_y * full_mask
-
+        
         if remove_outliers == 'new':
             gradient_x_segmented = self._set_values_above_3sigma_to_nan_new(gradient_x_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
             gradient_y_segmented = self._set_values_above_3sigma_to_nan_new(gradient_y_segmented, np.sqrt(gradient_x_segmented**2+gradient_y_segmented**2))
@@ -1703,7 +1642,7 @@ class GPA:
 
         return confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors
 
-    def get_g2(self, mtol=0, ptol=0, remove_outliers=''):
+    def get_g2(self, mtol=0, ptol=0, remove_outliers='', return_all=False):
         """
         Compute the G2 morphological index.
 
@@ -1730,24 +1669,274 @@ class GPA:
             g2 = (float(asymmetric_vectors) / float(total_valid_vectors)) * (1.0 - confluence)
         except ZeroDivisionError:
             g2 = np.nan
-        
-        
-        #gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, a_mask, modules_normalized, modules, phases, no_pair_count, confluence, total_valid_vectors, asymmetric_vectors, symmetric_vectors
-        
-        return g2 
+        if return_all:
+            return {
+                "g2": g2,
+                "confluence": confluence,
+                "gradient_x": gradient_x,
+                "gradient_y": gradient_y,
+                "gradient_a_x": gradient_a_x,
+                "gradient_a_y": gradient_a_y,
+                "modules_substracted": modules_substracted,
+                "phases_substracted": phases_substracted,
+                "a_mask": a_mask,
+                "modules_normalized": modules_normalized,
+                "modules": modules,
+                "phases": phases,
+                "no_pair_count": no_pair_count,
+                "total_valid_vectors": total_valid_vectors,
+                "asymmetric_vectors": asymmetric_vectors,
+                "symmetric_vectors": symmetric_vectors,
+                }
+        else:
+            return g2
     
-    
-    
+    def plot_diagnostics(self, mtol=0.1, ptol=30, remove_outliers='new'):
+        """
+        Plot diagnostic panels: gradient field, asymmetric field, module distribution, and phase difference.
 
-   
+        Parameters
+        ----------
+        mtol : float
+            Tolerance on normalized gradient magnitude difference.
+        ptol : float
+            Tolerance on phase angle difference (degrees).
+        remove_outliers : str
+            Whether to apply outlier rejection: 'new', 'old', or '' (none).
+        """
+
+        gradient_x, gradient_y, gradient_a_x, gradient_a_y, modules_substracted, phases_substracted, \
+        a_mask, modules_normalized, modules, phases, _, _ = self._get_ass_field(
+            self.image, self.segmentation.astype(np.float32), mtol, ptol, remove_outliers
+        )
+
+        plt.figure(figsize=(12, 12))
+
+        # 1. Gradient field
+        plt.subplot(2, 2, 1)
+        plt.title("Gradient Field", fontsize=22)
+        x, y = np.meshgrid(np.arange(gradient_y.shape[1]), np.arange(gradient_x.shape[0]))
+        plt.quiver(x, y, gradient_x, gradient_y, color="b")
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.tick_params(direction="in", size=7)
+
+        # 2. Asymmetric field
+        plt.subplot(2, 2, 2)
+        plt.title("Asymmetric Field", fontsize=22)
+        plt.quiver(x, y, gradient_a_x, gradient_a_y, color="red")
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.tick_params(direction="in", size=7)
+
+        # 3. Module distribution
+        plt.subplot(2, 2, 3)
+        plt.title("Modules Distribution", fontsize=22)
+        plt.hist(modules_normalized.flatten(), histtype="step", color="blue", lw=2,
+                 label="Modules Normalized", density=True, bins=np.arange(0, 1, 0.05))
+        plt.hist(modules_substracted.flatten(), histtype="step", color="red", lw=2,
+                 label="Modules Difference", density=True, bins=np.arange(0, 1, 0.05))
+        plt.xlabel("% of largest vector", fontsize=18)
+        plt.ylabel("Normalized Frequency", fontsize=18)
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.legend(frameon=False, fontsize=16)
+        plt.tick_params(direction="in", size=7)
+
+        # 4. Phase difference
+        plt.subplot(2, 2, 4)
+        plt.title("Phases Distribution", fontsize=22)
+        plt.hist(phases.flatten(), histtype="step", color="blue", lw=2, label="Phases",
+                 density=True, bins=np.arange(0, 360, 30))
+        plt.hist(phases_substracted.flatten(), histtype="step", color="red", lw=2,
+                 label="Phase Difference", density=True, bins=np.arange(0, 360, 30))
+        plt.xlabel("Angle", fontsize=18)
+        plt.ylabel("Normalized Frequency", fontsize=18)
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.legend(frameon=False, fontsize=16)
+        plt.tick_params(direction="in", size=7)
+
+        plt.subplots_adjust(wspace=0.3, hspace=0.2)
+  
+
+
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+class GPA2:
+    def __init__(self, image, segmentation=None):
+        self.image = image.astype(np.float32)
+        self.segmentation = segmentation.astype(int) if segmentation is not None else np.ones_like(image, dtype=int)
+        if self.image.shape != self.segmentation.shape:
+            raise ValueError("Image and segmentation must have the same shape.")
+
+    def _gradient_fields(self):
+        masked_image = np.where(self.segmentation, self.image, np.nan)
+        grad_y, grad_x = np.gradient(masked_image)
+        module = np.sqrt(grad_x**2 + grad_y**2)
+        phase = np.arctan2(grad_y, grad_x)  # Cartesian convention
+        phase_deg = np.degrees(phase) % 360
+        return grad_x, grad_y, module, phase_deg
+
+    def _angular_difference(self, a, b):
+        diff = np.abs(a - b) % 360
+        return np.minimum(diff, 360 - diff)
+
+    def _prepare_symmetric_mask(self, module, phase, mtol, ptol, module_norm_mode="pairwise", global_max=None):
+        module_rot = np.rot90(module, 2)
+        phase_rot = np.rot90(phase, 2)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            if module_norm_mode == "pairwise":
+                norm = np.maximum(module, module_rot)
+            elif module_norm_mode == "global" and global_max is not None:
+                norm = np.full_like(module, global_max)
+            else:
+                raise ValueError("Invalid normalization mode or missing global_max.")
+
+            valid_mask = np.isfinite(module) & np.isfinite(module_rot)
+            module_diff = np.full_like(module, np.nan)
+            module_diff[valid_mask] = np.abs(module[valid_mask] - module_rot[valid_mask]) / norm[valid_mask]
+            module_diff = np.nan_to_num(module_diff, nan=0)
+
+        phase_diff = self._angular_difference(phase, phase_rot)
+        phase_diff = np.nan_to_num(phase_diff, nan=0)
+
+        return module_diff > mtol, phase_diff > ptol
+
+    def _confluence(self, grad_x, grad_y, module):
+        sum_vec = np.array([np.nansum(grad_x), np.nansum(grad_y)])
+        sum_mod = np.nansum(module)
+        return np.linalg.norm(sum_vec) / sum_mod if sum_mod > 0 else 0
+
+    def get_g2(self, mtol=0.05, ptol=15, remove_outliers=True, module_norm_mode="pairwise"):
+        grad_x, grad_y, module, phase = self._gradient_fields()
+
+        if remove_outliers:
+            mean, std = np.nanmean(module), np.nanstd(module)
+            mask = (module >= mean - 3 * std) & (module <= mean + 3 * std)
+            grad_x[~mask] = grad_y[~mask] = module[~mask] = phase[~mask] = np.nan
+
+        global_max = np.nanmax(module) if module_norm_mode == "global" else None
+        m_mask, p_mask = self._prepare_symmetric_mask(module, phase, mtol, ptol, module_norm_mode, global_max)
+        asym_mask = m_mask | p_mask
+
+        grad_x_asym = np.where(asym_mask, grad_x, np.nan)
+        grad_y_asym = np.where(asym_mask, grad_y, np.nan)
+
+        total_valid = np.sum(np.isfinite(module))
+        asym_count = np.sum(np.isfinite(grad_x_asym))
+
+        confluence = self._confluence(grad_x_asym, grad_y_asym, module)
+
+        try:
+            g2 = (asym_count / total_valid) * (1 - confluence)
+        except ZeroDivisionError:
+            g2 = np.nan
+
+        return g2, confluence
+
+    def get_gpm(self, p=1, remove_outliers=True):
+        grad_x, grad_y, module, phase = self._gradient_fields()
+
+        if remove_outliers:
+            mean, std = np.nanmedian(module), np.nanstd(module)
+            mask = (module >= mean - 3 * std) & (module <= mean + 3 * std)
+            grad_x[~mask] = grad_y[~mask] = module[~mask] = phase[~mask] = np.nan
+
+        module_rot = np.rot90(module, 2)
+        phase_rot = np.rot90(phase, 2)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            norm = np.maximum(module, module_rot)
+            delta_m = np.abs(module - module_rot) / norm
+            delta_phi = self._angular_difference(phase, phase_rot)
+
+        h, w = module.shape
+        y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+        yc, xc = h // 2, w // 2
+        r = np.sqrt((x - xc)**2 + (y - yc)**2)
+
+        weights = r**p * delta_m * (1 - np.cos(np.radians(delta_phi)))
+        denominator = np.nansum(r**p * norm)
+        gpm = np.nansum(weights) / denominator if denominator > 0 else np.nan
+
+        return gpm
+
+    def get_gpc(self, p=1, remove_outliers=True):
+        grad_x, grad_y, module, _ = self._gradient_fields()
+
+        if remove_outliers:
+            mean, std = np.nanmean(module), np.nanstd(module)
+            mask = (module >= mean - 3 * std) & (module <= mean + 3 * std)
+            grad_x[~mask] = grad_y[~mask] = module[~mask] = np.nan
+
+        dgy_dy, dgy_dx = np.gradient(grad_y)
+        dgx_dy, dgx_dx = np.gradient(grad_x)
+        curl = dgy_dx - dgx_dy
+
+        h, w = module.shape
+        y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+        yc, xc = h // 2, w // 2
+        r = np.sqrt((x - xc)**2 + (y - yc)**2)
+
+        numerator = np.nansum(np.abs(curl) * r**p)
+        denominator = np.nansum(np.sqrt(grad_x**2 + grad_y**2) * r**p)
+        epsilon = 1e-12
+        gpc = -np.log10(numerator / denominator + epsilon) if denominator > 0 else np.nan
+
+        return gpc
+
+    def plot_gradient_analysis(self, mtol=0.05, ptol=15, module_norm_mode="pairwise"):
+        grad_x, grad_y, module, phase = self._gradient_fields()
+
+        global_max = np.nanmax(module) if module_norm_mode == "global" else None
+        m_mask, p_mask = self._prepare_symmetric_mask(module, phase, mtol, ptol, module_norm_mode, global_max)
+        asym_mask = m_mask | p_mask
+
+        # Normalize vectors for plotting
+        norm = np.sqrt(grad_x**2 + grad_y**2)
+        grad_xn = grad_x / (norm + 1e-8)
+        grad_yn = grad_y / (norm + 1e-8)
+        grad_xa = np.where(asym_mask, grad_xn, np.nan)
+        grad_ya = np.where(asym_mask, grad_yn, np.nan)
+
+        # Curl calculation
+        dgy_dy, dgy_dx = np.gradient(grad_y)
+        dgx_dy, dgx_dx = np.gradient(grad_x)
+        curl = dgy_dx - dgx_dy
+
+        h, w = module.shape
+        y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+
+        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+
+        # Panel 1: Vector Field
+        axs[0, 0].quiver(x, y, grad_xn, grad_yn, color='blue', scale=30, width=0.002)
+        axs[0, 0].quiver(x, y, grad_xa, grad_ya, color='red', scale=30, width=0.003)
+        axs[0, 0].set_title("Gradient Field (Blue) vs Asymmetric (Red)")
+
+        # Panel 2: Histogram of Module Difference
+        module_rot = np.rot90(module, 2)
+        norm_m = np.maximum(module, module_rot) if module_norm_mode == "pairwise" else global_max
+        delta_m = np.abs(module - module_rot) / norm_m
+        axs[0, 1].hist(delta_m[~np.isnan(delta_m)].flatten(), bins=30, color='skyblue', edgecolor='black')
+        axs[0, 1].set_title("Histogram of Module Differences")
+        axs[0, 1].set_xlabel("Relative Module Difference")
+
+        # Panel 3: Histogram of Phase Difference
+        phase_rot = np.rot90(phase, 2)
+        delta_phi = self._angular_difference(phase, phase_rot)
+        axs[1, 0].hist(delta_phi[~np.isnan(delta_phi)].flatten(), bins=30, color='salmon', edgecolor='black')
+        axs[1, 0].set_title("Histogram of Phase Differences")
+        axs[1, 0].set_xlabel("Phase Difference (degrees)")
+
+        # Panel 4: Curl Field
+        im = axs[1, 1].imshow(np.abs(curl), cmap='viridis')
+        axs[1, 1].set_title("Curl Magnitude Field")
+        fig.colorbar(im, ax=axs[1, 1], orientation='vertical', shrink=0.7)
+
+        for ax in axs.flat:
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        plt.tight_layout()

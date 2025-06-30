@@ -2,6 +2,11 @@ import numpy as np
 import sep
 from scipy import interpolate
 import warnings
+from photutils.aperture import EllipticalAperture, CircularAperture
+from photutils.aperture import EllipticalAperture, aperture_photometry, EllipticalAnnulus
+from scipy.interpolate import UnivariateSpline
+from scipy.ndimage import gaussian_filter
+import warnings
 
 """
 PetrosianCalculator
@@ -28,54 +33,42 @@ calculate_petrosian_radius :
 calculate_fractional_radius :
     Compute the radius enclosing a specific fraction of the total light.
 """
-class PetrosianCalculator:
-    """
-    Class to calculate the Petrosian radius for a galaxy.
-    """
-    def __init__(self, image, x, y, a, b, theta):
-        """Initialize the PetrosianCalculator.
-
-        Parameters
-        ----------
-        galaxy_image : ndarray
-            Input galaxy image.
-        x, y : float
-            Galaxy center coordinates.
-        a, b : float
-            Semi-major and semi-minor axes.
-        theta : float
-            Ellipticity angle (radians).
-        """
-        self.image = image
+class PetrosianCalc:
+    def __init__(self, image, x, y, a, b, theta, smoothing = 1.5):
         self.x = x
         self.y = y
         self.a = a
         self.b = b
         self.theta = theta
+        self.image = gaussian_filter(image, sigma=smoothing)
         
-        
-        
-        
-    def _define_apertures(self, a, rp_step=0.05):
-        """
-        Define the aperture scales for Petrosian radius calculation.
+    def calculate_eta(self, s):
+        center = (self.x, self.y)
+        a_sma = s
+        b_sma = s*self.b/self.a
 
-        Parameters:
-        -----------
-        step : float
-            Step size for aperture scaling.
+        a_in = a_sma * 0.8
+        a_out = a_sma * 1.25
+        b_in = a_in * (self.b / self.a)
+        b_out = a_out * (self.b / self.a)
 
-        Returns:
-        --------
-        ndarray
-            Array of aperture scales.
-        """
-        scalemin = max(1 / a, 0)
-        scalemax = min(int(0.5 * len(self.image[0]) / a), len(self.image) / 2)
-        return np.arange(scalemin, scalemax, rp_step)
+        # Define apertures
+        ellip_annulus = EllipticalAnnulus(center, a_in, a_out, b_out, theta=self.theta)
+        ellip_aperture = EllipticalAperture(center, a_sma, b_sma, theta=self.theta)
+
+        # Photometry
+        flux_annulus = ellip_annulus.do_photometry(self.image, method='exact')[0][0]
+        flux_aperture = ellip_aperture.do_photometry(self.image, method='exact')[0][0]
+
+        # Divide by geometric area
+        mean_annulus = flux_annulus / ellip_annulus.area
+        mean_total = flux_aperture / ellip_aperture.area
+        eta = mean_annulus/mean_total
+        return(mean_annulus, mean_total, eta, s, flux_aperture)
 
     def calculate_petrosian_radius(self, rp_thresh = 0.2, aperture = "elliptical", optimize_rp = True,
                                    interpolate_order = 3, Naround = 3, rp_step = 0.05):
+    
         """Compute the Petrosian radius and its associated profile.
 
         Parameters
@@ -108,7 +101,7 @@ class PetrosianCalculator:
         """
         
         eta, numerador, denominador, raio, growth_curve = [], [], [], [], []
-        scale = self._define_apertures(self.a, rp_step)
+        scale = np.arange(1, len(self.image)/2, rp_step)
         if aperture == 'circular':
             b = self.a
             
@@ -118,144 +111,174 @@ class PetrosianCalculator:
             raise ValueError("Invalid aperture shape. Options are 'elliptical' and 'circular'.")
 
         if optimize_rp:
-            eta, raio, growth_curve, rp, eta_flag = self._optimize_eta(scale, self.x, self.y, self.a, b, self.theta, rp_thresh)
+            eta, raio, growth_curve, rp, eta_flag = self._optimize_eta(scale, 
+                                                                       rp_thresh)
+        
         else:
-            eta, raio, growth_curve, rp, eta_flag = self._standard_eta(scale, self.x, self.y, self.a, b, self.theta, rp_thresh)
+            eta, raio, growth_curve, rp, eta_flag = self._standard_eta(scale, 
+                                                                       rp_thresh)
 
         return eta, growth_curve, raio, rp, eta_flag
-
-    def _optimize_eta(self, scale, x, y, a, b, theta, rp_thresh=0.2, interpolate_order=3, Naround=3):
+        
+        
+    def _optimize_eta(self, scale, rp_thresh=0.2, interpolate_order=3, Naround=3):
         """
-        Optimize the Petrosian radius based on eta values.
+        Optimize the Petrosian radius based on eta values with early stopping and robust interpolation.
+    
+        Parameters
+        ----------
+        scale : array-like
+            Semi-major axis values to evaluate.
+        rp_thresh : float
+            Threshold value for eta (typically 0.2).
+        interpolate_order : int
+            Order of the spline interpolation (e.g., 3 = cubic).
+        Naround : int
+            Number of eta points around the crossing to use for interpolation.
 
         Returns
-        --------
-        tuple
-            Eta values, the optimized Petrosian radius, and the growth curve.
+        -------
+        eta : ndarray
+            Eta values evaluated.
+        raio : ndarray
+            Corresponding semi-major axis values.
+        growth_curve : ndarray
+            Cumulative flux within each aperture.
+        rp : float
+            Petrosian radius.
+        eta_flag : int
+            0 if successful, 1 if crossing not found robustly.
         """
-        eta, numerador, denominador, raio, growth_curve = [], [], [], [], []
-        eta_found, index, count = False, 0, 0
-        if len(scale) == 0:
-            raise ValueError("Aperture scale array is empty. Check 'a' and image dimensions.")
+        eta, raio, growth_curve = [], [], []
+        eta_flag = 1
+        crossing_index = None
 
-        while (count < Naround) and (index < len(scale)):
-            s = scale[index]
+        for i, s in enumerate(scale):
             try:
-                num, den, eta_iter, radius, flux3 = self._calculate_eta_values(s, x, y, a, b, theta)
-                numerador.append(num[0])
-                denominador.append(den[0])
-                eta.append(eta_iter[0])
+                num, den, eta_iter, radius, flux3 = self.calculate_eta(s)
+                eta.append(eta_iter)
                 raio.append(radius)
-                growth_curve.append(flux3[0])
+                growth_curve.append(flux3)
 
-                if eta_iter - rp_thresh < 0:
-                    count += 1
-                if count == 1:
-                    closest_eta_index = index
+                # Check crossing
+                if len(eta) >= 2 and eta[-2] >= rp_thresh > eta[-1] and crossing_index is None:
+                    crossing_index = i
             except Exception as e:
-                # Log and continue
-                print(f"[WARNING] Skipping scale {s:.2f} due to error: {e}")
-            index += 1
+                print(f"[WARNING] Skipping radius {s:.2f}: {e}")
+                continue
+
+            # Stop early if enough points after threshold crossing
+            if crossing_index is not None and (i - crossing_index >= Naround):
+                break
 
         eta = np.array(eta)
         raio = np.array(raio)
         growth_curve = np.array(growth_curve)
-        eta_flag = 0
 
-        # Handle insufficient points or bad data
-        if len(eta) < interpolate_order + 1 or np.all(~np.isfinite(eta)):
-            warnings.warn("Interpolation failed due to insufficient or invalid eta values.", UserWarning)
-            return eta, raio, growth_curve, np.nan, 1
-
-        if index >= len(scale) - 1:
-            warnings.warn("Annomaly in eta function, calculating Rp using approximations, results may be not accurate", UserWarning)
-            closest_eta_index = np.nanargmin(np.abs(eta - rp_thresh))
+        if crossing_index is not None and crossing_index >= Naround:
+            imin = max(crossing_index - Naround, 0)
+            imax = min(crossing_index + Naround + 1, len(eta))
+            try:
+                spl = interpolate.splrep(raio[imin:imax], eta[imin:imax], k=interpolate_order)
+                xnew = np.linspace(raio[imin], raio[imax-1], 1000)
+                ynew = interpolate.splev(xnew, spl)
+                rp = xnew[np.argmin(np.abs(ynew - rp_thresh))]
+                eta_flag = 0
+            except Exception as e:
+                print(f"[WARNING] Interpolation failed: {e}")
+                rp = np.nan
+                eta_flag = 1
+        else:
+            # Fallback: closest value
+            rp = raio[np.nanargmin(np.abs(eta - rp_thresh))] if len(raio) > 0 else np.nan
             eta_flag = 1
+            print("[WARNING] Eta never crossed threshold or too few points for interpolation.")
 
-        # Interpolate only if safe
-        rp = self._interpolate_eta(eta, raio, closest_eta_index, rp_thresh, interpolate_order, Naround)
         return eta, raio, growth_curve, rp, eta_flag
     
-    def _standard_eta(self, scale, x, y, a, b, theta, rp_thresh = 0.2, interpolate_order = 3, Naround = 3):
+    
+    def _standard_eta(self, scale, rp_thresh=0.2, interpolate_order=3, Naround=3):
         """
-        Standard calculation of eta values without optimization.
+        Standard Petrosian eta profile computation across full scale without early stopping.
 
-        Returns:
-        --------
-        tuple
-            Eta values, the Petrosian radius, and the growth curve.
+        Parameters
+        ----------
+        scale : array-like
+            Semi-major axis values to evaluate.
+        rp_thresh : float
+            Threshold value for eta (typically 0.2).
+        interpolate_order : int
+            Order of the spline interpolation (e.g., 3 = cubic).
+        Naround : int
+            Number of eta points around the crossing to use for interpolation.
+
+        Returns
+        -------
+        eta : ndarray
+            Petrosian eta values.
+        raio : ndarray
+            Semi-major axis values (in pixels).
+        growth_curve : ndarray
+            Flux within aperture at each radius.
+        rp : float
+            Petrosian radius (interpolated).
+        eta_flag : int
+            0 if success, 1 if crossing not robustly found.
         """
-        
-        eta, numerador, denominador, raio, growth_curve = [], [], [], [], []
+        eta, raio, growth_curve = [], [], []
 
         for s in scale:
-            num, den, eta_iter, radius, flux3 = self._calculate_eta_values(s, x, y, a, b, theta)
-            numerador.append(num[0])
-            denominador.append(den[0])
-            eta.append(eta_iter[0])
-            raio.append(radius)
-            growth_curve.append(flux3[0])
-        index = np.argmin(np.abs(np.array(eta) - rp_thresh))
-        eta_flag = 0
-        if np.min(np.abs(np.array(eta) - rp_thresh)) > 0.1:
+            try:
+                num, den, eta_iter, radius, flux3 = self.calculate_eta(s)
+                eta.append(eta_iter)
+                raio.append(radius)
+                growth_curve.append(flux3)
+            except Exception as e:
+                print(f"[WARNING] Skipping radius {s:.2f}: {e}")
+                continue
+
+        eta = np.array(eta)
+        raio = np.array(raio)
+        growth_curve = np.array(growth_curve)
+
+        eta_flag = 1
+        rp = np.nan
+
+        # Find valid threshold crossing
+        crossings = np.where((eta[:-1] >= rp_thresh) & (eta[1:] < rp_thresh))[0]
+        if len(crossings) > 0:
+            i = crossings[0]
+            imin = max(i - Naround, 0)
+            imax = min(i + Naround + 1, len(eta))
+
+            try:
+                spl = interpolate.splrep(raio[imin:imax], eta[imin:imax], k=interpolate_order)
+                xnew = np.linspace(raio[imin], raio[imax - 1], 1000)
+                ynew = interpolate.splev(xnew, spl)
+                rp = xnew[np.argmin(np.abs(ynew - rp_thresh))]
+                eta_flag = 0
+            except Exception as e:
+                print(f"[WARNING] Interpolation failed: {e}")
+                rp = np.nan
+                eta_flag = 1
+        else:
+            print("[WARNING] No eta crossing found. Using closest point as fallback.")
+            if len(eta) > 0:
+                rp = raio[np.nanargmin(np.abs(eta - rp_thresh))]
             eta_flag = 1
-        return eta, raio, growth_curve, self._interpolate_eta(np.array(eta), np.array(raio), index, rp_thresh, 
-                                                              interpolate_order, Naround), eta_flag
 
-    def _calculate_eta_values(self, s, x, y, a, b, theta):
-        """
-        Calculate numerator, denominator, and eta values for a given scale.
-
-        Returns:
-        --------
-        tuple
-            Numerator, denominator, eta value, radius, and flux3 (growth curve value).
-        """
-        flux1, _, _ = sep.sum_ellipse(self.image, [x], [y], [0.8 * s * a], [0.8 * s * b], [theta], subpix=100)
-        flux2, _, _ = sep.sum_ellipse(self.image, [x], [y], [1.25 * s * a], [1.25 * s * b], [theta], subpix=100)
-        flux3, _, _ = sep.sum_ellipse(self.image, [x], [y], [s * a], [s * b], [theta], subpix=100)
-
-        i_flux = flux2 - flux1
-        a1, a2, a3 = np.pi * (0.8 * s * a) * (0.8 * s * b), np.pi * (1.25 * s * a) * (1.25 * s * b), np.pi * (s * a) * (s * b)
-
-        num = i_flux / (a2 - a1)
-        den = flux3 / a3
-        eta_iter = num / den
-        radius = s * a
-
-        return num, den, eta_iter, radius, flux3
-
-    def _interpolate_eta(self, eta, raio, index, rp_thresh = 0.2, interpolate_order = 3, Naround = 3):
-        """
-        Interpolate to find the Petrosian radius.
-
-        Returns:
-        --------
-        tuple
-            Eta values and the interpolated Petrosian radius.
-        """
-        imin = max(index - Naround, 0)
-        imax = min(index + Naround, len(eta))
-        if len(raio[imin:imax]) <= interpolate_order:
-            imax = min(imax + interpolate_order, len(raio))
-
-        x, y = raio[imin:imax], eta[imin:imax]
-        f1 = interpolate.splrep(x, y, k=interpolate_order)
-
-        xnew = np.linspace(min(x), max(x), num=1000001, endpoint=True)
-        ynew = interpolate.splev(xnew, f1, der=0)
-        rp = xnew[np.argmin(np.abs(ynew - rp_thresh))]
-
-        return float(rp)
-
-    def calculate_fractional_radius(self, fraction=0.5, sampling=0.05, aperture='elliptical'):
+        return eta, raio, growth_curve, rp, eta_flag
+    
+    def calculate_fractional_radius(self, fraction=0.5, rmax = None, step=0.05, aperture='elliptical'):
         """Compute the radius enclosing a fixed fraction of total light.
 
         Parameters
         ----------
         fraction : float
             Fraction of light to enclose (e.g., 0.5 for Re).
-        sampling : float
+        rmax : float
+            Maximum radius to define full flux.
+        step : float
             Sampling resolution in pixels.
         aperture : str
             Type of aperture: 'elliptical' or 'circular'.
@@ -271,30 +294,31 @@ class PetrosianCalculator:
         """
         
         # Create semi-major axis values
-        sma_values = np.arange(1, 8 * self.a, sampling)
+        
+        sma_values = np.arange(1, rmax if rmax is not None else 8 * self.a, step)
+        flux_values = []
 
-        if aperture == 'circular':
-            b_values = sma_values
-        else:
-            b_values = sma_values * (self.b / self.a)
+        for sma in sma_values:
+            if aperture == 'circular':
+                ap = CircularAperture((self.x, self.y), r=sma)
+            else:
+                bma = sma * (self.b / self.a)
+                ap = EllipticalAperture((self.x, self.y), a=sma, b=bma, theta=self.theta)
 
-        # Compute cumulative flux directly with SEP
-        flux_values, _, _ = sep.sum_ellipse(
-                                            self.image,
-                                            [self.x], [self.y],
-                                            sma_values,
-                                            b_values,
-                                            [self.theta] * len(sma_values)
-                                            )
+            try:
+                flux = ap.do_photometry(self.image, method='exact')[0][0]
+            except Exception:
+                flux = 0.0  # fallback in case aperture is partially outside
+            flux_values.append(flux)
 
         flux_values = np.nan_to_num(flux_values, nan=0.0)
         total_flux = flux_values[-1]
 
         # Interpolate to find Re
         Re = np.interp(fraction * total_flux, flux_values, sma_values)
-        return Re, flux_values, sma_values
-
-    def get_kron_radius(self, rmax=None):
+        return Re
+    
+    def calculate_kron_radius(self, rmax=None):
         """
         Manually compute the Kron radius within an elliptical aperture.
 

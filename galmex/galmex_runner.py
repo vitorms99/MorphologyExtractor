@@ -26,7 +26,7 @@ from galmex.Utils_module import open_fits_image, get_files_with_format, recenter
 from galmex.Background_module import BackgroundEstimator
 from galmex.Detection_module import ObjectDetector
 from galmex.Cleaning_module import GalaxyCleaner
-from galmex.Petrosian_module import PetrosianCalculator
+from galmex.Petrosian_module import PetrosianCalc
 from galmex.Flagging_module import FlaggingHandler
 from galmex.Segmentation_module import SegmentImage
 from galmex.Metrics_module import Concentration, Asymmetry, Smoothness, Moment_of_light, Shannon_entropy, Gini_index, GPA
@@ -86,7 +86,13 @@ class GalaxyMorphometrics:
         if not os.path.isfile(self.image_path):
             raise FileNotFoundError(f"File not found: {self.image_path}")
 
-        image, header = fits.getdata(self.image_path, header=True)
+        hdu_index = self.config["initial_settings"].get("hdu", 0)
+        with fits.open(self.image_path) as hdul:
+            if hdu_index >= len(hdul):
+                raise IndexError(f"HDU {hdu_index} not found in {self.image_path}")
+            image = hdul[hdu_index].data
+            header = hdul[hdu_index].header
+
         if image.ndim != 2:
             raise ValueError(f"Image must be 2D, got shape {image.shape}")
 
@@ -266,7 +272,7 @@ class GalaxyMorphometrics:
         step = float(profile_cfg.get("step", 0.05))  # Default to 0.05
 
         # Initialize Petrosian calculator
-        rp_calc = PetrosianCalculator(self.image_clean, 
+        rp_calc = PetrosianCalc(self.image_clean, 
                                           self.results["x"], 
                                           self.results["y"], 
                                           self.results["a"], 
@@ -284,15 +290,18 @@ class GalaxyMorphometrics:
             )
 
         # Compute R50
-        r50, cum_flux, sma_values = rp_calc.calculate_fractional_radius(
+        r50 = rp_calc.calculate_fractional_radius(
                 aperture=aperture,
-                sampling=step
+                step=step
             )
+            
+        rkron = rp_calc.calculate_kron_radius(rmax = 2*rp)
 
         rp_flag = 0  # Success
 
         self.results["rp"] = rp
         self.results["r50"] = r50
+        self.results["rkron"] = rkron
         self.results["eta_flag"] = eta_flag
         self.results["rp_flag"] = rp_flag
         self.radius = radius
@@ -357,13 +366,21 @@ class GalaxyMorphometrics:
         def compute_concentration(image):
             if apply_smoothing:
                 image = convolve(image, kernel, normalize_kernel=True)
-            conc = Concentration(image)
+            conc = Concentration(image, 
+                                 x=self.results["x"], 
+                                 y=self.results["y"],
+                                 a=self.results["a"], 
+                                 b=b_value, 
+                                 theta=self.results["theta"])
             return conc.get_concentration(
-                                              x=self.results["x"], y=self.results["y"],
-                                              a=self.results["a"], b=b_value, theta=self.results["theta"],
-                                              method="conselice", f_inner=f_inner, f_outter=f_outer,
-                                              rmax=rmax, sampling_step=0.1, Naround=3, interp_order=3
-                                             )
+                                          method="conselice", 
+                                          f_inner=f_inner, 
+                                          f_outter=f_outer,
+                                          rmax=rmax, 
+                                          sampling_step=0.1, 
+                                          Naround=3, 
+                                          interp_order=3
+                                          )
 
         if estimate_uncertainty:
             C_list, ri_list, ro_list = [], [], []
@@ -383,8 +400,11 @@ class GalaxyMorphometrics:
             C, ri, ro = self.results["C"], self.results["rinner"], self.results["routter"]
         else:
             C, ri, ro = compute_concentration(self.image_clean)
-            self.results.update({"C": C, "rinner": ri, "routter": ro})
-            c_flag = 0  # Success
+            self.results["C"] = C
+            self.results["rinner"] = ri
+            self.results["routter"] = ro
+        
+        c_flag = 0  # Success
 
         self.results["c_flag"] = c_flag
         return C, ri, ro, c_flag
@@ -463,8 +483,9 @@ class GalaxyMorphometrics:
             A, A_xc, A_yc = self.results["A"], self.results["A_xc"], self.results["A_yc"]
         else:
             A, A_xc, A_yc = compute_asym(self.image_clean)
-            self.results.update({"A": A, "A_xc": A_xc, "A_yc": A_yc})
-
+            self.results["A"] = A
+            self.results["A_xc"] = A_xc
+            self.results["A_yc"] = A_yc
         a_flag = 0  # Success
 
         self.results["a_flag"] = a_flag
@@ -614,7 +635,9 @@ class GalaxyMorphometrics:
                 image_i = convolve(image_i, kernel, normalize_kernel=True)
             moment_calculator = Moment_of_light(image_i, segmentation=m20_mask)
             m20, m20_xc, m20_yc = moment_calculator.get_m20(f=fraction, minimize_total=True)
-            self.results.update({"M20": m20, "M20_xc": round(m20_xc), "M20_yc": round(m20_yc)})
+            self.results["M20"] = m20
+            self.results["M20_xc"] = m20_xc
+            self.results["M20_yc"] = m20_yc
 
         m20_flag = 0  # success
 
@@ -951,8 +974,27 @@ class ConsoleWindow(tk.Toplevel):
         # Count successes and failures
         total = len(results)
         # Define critical keys you expect from a fully successful run
+        expected_keys = ["rp", "r50"]
 
-        expected_keys = ["rp", "r50", "C", "A", "S", "M20", "E", "Gini", "G2"]
+        # Dynamically extend based on config
+        cas_flags = self.config.get("CAS", {})
+        if cas_flags.get("enable_concentration", False):
+            expected_keys.append("C")
+        if cas_flags.get("enable_asymmetry", False):
+            expected_keys.append("A")
+        if cas_flags.get("enable_smoothness", False):
+            expected_keys.append("S")
+
+        megg_flags = self.config.get("MEGG", {})
+        if megg_flags.get("enable_m20", False):
+            expected_keys.append("M20")
+        if megg_flags.get("enable_entropy", False):
+            expected_keys.append("E")
+        if megg_flags.get("enable_gini", False):
+            expected_keys.append("Gini")
+        if megg_flags.get("enable_g2", False):
+            expected_keys.append("G2")
+        
         complete, failed = [], []
         for r in results:
             if isinstance(r, dict) and "obj" in r:
@@ -1080,8 +1122,30 @@ class ConsoleWindow(tk.Toplevel):
                         error_msg = str(e)
 
                     results.append(result)
-
+                    
+                    
                     expected_keys = ["rp", "r50"]
+
+                    # Dynamically extend based on config
+                    cas_flags = self.config.get("CAS", {})
+                    if cas_flags.get("enable_concentration", False):
+                        expected_keys.append("C")
+                    if cas_flags.get("enable_asymmetry", False):
+                        expected_keys.append("A")
+                    if cas_flags.get("enable_smoothness", False):
+                        expected_keys.append("S")
+
+                    megg_flags = self.config.get("MEGG", {})
+                    if megg_flags.get("enable_m20", False):
+                        expected_keys.append("M20")
+                    if megg_flags.get("enable_entropy", False):
+                        expected_keys.append("E")
+                    if megg_flags.get("enable_gini", False):
+                        expected_keys.append("Gini")
+                    if megg_flags.get("enable_g2", False):
+                        expected_keys.append("G2")
+                    
+                    
                     if all(k in result and not pd.isna(result[k]) for k in expected_keys):
                         self.log(f"[{step+1}/{total_steps}] {obj} — Processed successfully.")
                     elif error_msg:
@@ -1105,6 +1169,25 @@ class ConsoleWindow(tk.Toplevel):
                         objname = result["obj"]
 
                         expected_keys = ["rp", "r50"]
+
+                        # Dynamically extend based on config
+                        cas_flags = self.config.get("CAS", {})
+                        if cas_flags.get("enable_concentration", False):
+                            expected_keys.append("C")
+                        if cas_flags.get("enable_asymmetry", False):
+                            expected_keys.append("A")
+                        if cas_flags.get("enable_smoothness", False):
+                            expected_keys.append("S")
+
+                        megg_flags = self.config.get("MEGG", {})
+                        if megg_flags.get("enable_m20", False):
+                            expected_keys.append("M20")
+                        if megg_flags.get("enable_entropy", False):
+                            expected_keys.append("E")
+                        if megg_flags.get("enable_gini", False):
+                            expected_keys.append("Gini")
+                        if megg_flags.get("enable_g2", False):
+                            expected_keys.append("G2")
 
                         if all(k in result and not pd.isna(result[k]) for k in expected_keys):
                             self.log(f"[{i+1}/{total_steps}] {result['obj']} — Processed successfully.")
@@ -1244,7 +1327,16 @@ class App(tk.Tk):
         self.core_var = tk.IntVar(value=1)
         core_spinbox = tk.Spinbox(inner_frame, from_=1, to=max_cores, textvariable=self.core_var, font=entry_font, width=5)
         core_spinbox.pack(side="left", padx=(0, 30))
-
+        
+        
+        ttk.Label(inner_frame, text="HDU:", font=label_font).pack(side="left", padx=(0, 5))
+        self.hdu_var = tk.IntVar(value=0)  # default HDU
+        hdu_entry = ttk.Entry(inner_frame, textvariable=self.hdu_var, font=entry_font, width=5)
+        hdu_entry.pack(side="left", padx=(0, 10))
+        help_btn_hdu = ttk.Button(inner_frame, text="?", width=2,
+            command=lambda: self.show_help("Specify which FITS HDU to analyze (e.g., 0 or 1)."))
+        help_btn_hdu.pack(side="left")
+        
         # --- Analysis Setup Section ---
         analysis_container = ttk.Frame(frame_initial_settings)
         analysis_container.pack(pady=(20, 5), fill="x")
@@ -2562,6 +2654,7 @@ class App(tk.Tk):
                                        "output_file": self.output_file_var.get(),
                                        "output_folder": self.output_folder_var.get(),
                                        "cores": self.core_var.get(),
+                                       "hdu": self.hdu_var.get(),
                                        "estimate_uncertainty": self.estimate_uncertainty_var.get(),
                                        "nsim": self.nsim_var.get(),
                                        "gain": self.gain_var.get(),
